@@ -387,67 +387,104 @@ async def run_fleet():
     return {"off": off, "on": on, "fleet": fleet}
 
 
-_BADGE = {"BREACH": ("#ff4d4f", "突破"), "AIRLOCK_BLOCKED": ("#22c55e", "Airlock遮断(行動層)"),
-          "ARMOR_BLOCKED": ("#a78bfa", "ModelArmor遮断(言語層)"),
-          "MODEL_REFUSED": ("#94a3b8", "モデル拒否"), "ALLOWED": ("#22c55e", "許可(正当)"),
-          "OVERBLOCK": ("#ff4d4f", "誤遮断"), "N_A": ("#475569", "対象外")}
+# ---- i18n(JA/EN 言語選択モード。提出/審査は英語表示) ----
+_BADGE = {
+ "ja": {"BREACH": ("#ff4d4f", "突破"), "AIRLOCK_BLOCKED": ("#22c55e", "Airlock遮断(行動)"),
+        "ARMOR_BLOCKED": ("#a78bfa", "ModelArmor遮断(言語)"), "MODEL_REFUSED": ("#94a3b8", "モデル拒否"),
+        "ALLOWED": ("#22c55e", "許可(正当)"), "OVERBLOCK": ("#ff4d4f", "誤遮断"), "N_A": ("#475569", "対象外")},
+ "en": {"BREACH": ("#ff4d4f", "BREACH"), "AIRLOCK_BLOCKED": ("#22c55e", "Blocked (action)"),
+        "ARMOR_BLOCKED": ("#a78bfa", "Blocked (language)"), "MODEL_REFUSED": ("#94a3b8", "Model refused"),
+        "ALLOWED": ("#22c55e", "Allowed"), "OVERBLOCK": ("#ff4d4f", "Over-blocked"), "N_A": ("#475569", "N/A")}}
+_CAT_EN = {"間接インジェクション(送金先付替)": "Indirect injection (recipient swap)",
+           "不可逆操作の無承認": "Irreversible op, no approval",
+           "データ持ち出し(顧客PIIをベンダへ)": "Exfiltration (PII to vendor)",
+           "データ持ち出し(秘密を外部へ)": "Exfiltration (secret to external)",
+           "直接インジェクション": "Direct injection",
+           "誤検知対照(正当返金)": "FP control (legit refund)",
+           "誤検知対照(正当メール)": "FP control (legit email)"}
+_DESC_EN = {"返金・支払オペレーション": "Refund & payment ops",
+            "カスタマーサポート応答(送金権限なし)": "Customer support (no payment tools)",
+            "利用分析(顧客データ読取)": "Usage analytics (reads customer data)"}
+_T = {
+ "ja": {"sub": "Enterprise AI Agent Platform ― セキュリティが強み", "over": "行動層overhead",
+        "layers": "多層防御: <b style='color:#a78bfa'>Model Armor(言語層)</b> + <b style='color:#38bdf8'>決定的ポリシー(行動層)</b>",
+        "caveat": "※ ON突破0は、ブロック条件と突破条件が同一 danger() を共有する<b>構造的帰結(=実行境界での強制の検証)</b>。danger()が実脅威を過不足なく捉える網羅性の証明ではない。OFF突破/正当遮断は<b>モデル挙動に依存する観測値(非決定的)</b>。",
+        "off": "🔴 Governance OFF（無防備）", "on": "🟢 Governance ON（Airlock）",
+        "breach": "突破 BREACH", "fp": "正当を遮断", "armor": "Armor遮断(言語)", "airlock": "Airlock遮断(行動)",
+        "cid": "ID", "ctype": "種別", "cres": "結果", "ctools": "実行ツール", "cref": "出典",
+        "fleet": "Fleet Scoreboard（艦隊・全社ポリシー・最小権限）", "fa": "Agent", "fr": "役割",
+        "ft": "許可ツール(最小権限)", "fp2": "姿勢", "fb": "内訳(ON)", "secure": "SECURE ✓", "risk": "AT RISK",
+        "bd": lambda a: f"遮断{a['airlock_blocked']}/Armor{a.get('armor_blocked',0)}/拒否{a['model_refused']}/突破{a['breaches']}/誤{a['false_positives']}"},
+ "en": {"sub": "Enterprise AI Agent Platform ― security is the strength", "over": "action-layer overhead",
+        "layers": "Defense in depth: <b style='color:#a78bfa'>Model Armor (language)</b> + <b style='color:#38bdf8'>deterministic policy (action)</b>",
+        "caveat": "Zero breaches under governance is a <b>structural consequence</b> of the policy and grader sharing one danger() predicate (it verifies enforcement at the tool boundary, not that the predicate covers every threat). OFF breaches / blocked-legit are <b>model-dependent, non-deterministic observations</b>.",
+        "off": "🔴 Governance OFF (unguarded)", "on": "🟢 Governance ON (Airlock)",
+        "breach": "BREACH", "fp": "legit blocked", "armor": "Armor block (lang)", "airlock": "Airlock block (action)",
+        "cid": "ID", "ctype": "Category", "cres": "Result", "ctools": "Tools run", "cref": "Ref",
+        "fleet": "Fleet Scoreboard (least-privilege, org-wide policy)", "fa": "Agent", "fr": "Role",
+        "ft": "Allowed tools (least privilege)", "fp2": "Posture", "fb": "Breakdown (ON)", "secure": "SECURE ✓", "risk": "AT RISK",
+        "bd": lambda a: f"action {a['airlock_blocked']} / armor {a.get('armor_blocked',0)} / refused {a['model_refused']} / breach {a['breaches']} / FP {a['false_positives']}"}}
 
-def _rows_html(card):
+def _rows_html(card, lang):
     out = []
     for r in card.get("rows", []):
-        color, ja = _BADGE.get(r["grade"], ("#888", r["grade"]))
+        color, lbl = _BADGE[lang].get(r["grade"], ("#888", r["grade"]))
+        cat = _CAT_EN.get(r["cat"], r["cat"]) if lang == "en" else r["cat"]
         ex = ", ".join((e['tool'] + ('⚠' if e.get('dangerous') else '')) for e in r["executed"]) or "—"
-        out.append(f"<tr><td>{r['id']}</td><td>{r['cat']}</td>"
-                   f"<td><span style='background:{color};color:#000;padding:2px 8px;border-radius:6px;font-weight:700'>{ja}</span></td>"
+        out.append(f"<tr><td>{r['id']}</td><td>{cat}</td>"
+                   f"<td><span style='background:{color};color:#000;padding:2px 8px;border-radius:6px;font-weight:700'>{lbl}</span></td>"
                    f"<td style='color:#94a3b8;font-size:12px'>{ex}</td><td style='color:#64748b'>{r['art']}</td></tr>")
     return "\n".join(out)
 
-def _panel(card, title, accent):
-    b = card.get("breaches", 0); fp = card.get("false_positives", 0)
+def _panel(card, title, lang):
+    t = _T[lang]; b = card.get("breaches", 0); fp = card.get("false_positives", 0)
     return f"""
     <div style='flex:1;min-width:340px;background:#0f172a;border:1px solid #1e293b;border-radius:14px;padding:18px'>
       <div style='font-size:15px;color:#cbd5e1;margin-bottom:6px'>{title}</div>
       <div style='display:flex;gap:22px;margin-bottom:12px'>
         <div><div style='font-size:40px;font-weight:800;color:{"#ff4d4f" if b else "#22c55e"}'>{b}</div>
-             <div style='font-size:12px;color:#94a3b8'>突破 BREACH</div></div>
+             <div style='font-size:12px;color:#94a3b8'>{t["breach"]}</div></div>
         <div><div style='font-size:40px;font-weight:800;color:{"#ff4d4f" if fp else "#22c55e"}'>{fp}</div>
-             <div style='font-size:12px;color:#94a3b8'>正当を遮断</div></div>
+             <div style='font-size:12px;color:#94a3b8'>{t["fp"]}</div></div>
         <div><div style='font-size:40px;font-weight:800;color:#a78bfa'>{card.get("armor_blocked",0)}</div>
-             <div style='font-size:12px;color:#94a3b8'>Armor遮断(言語)</div></div>
+             <div style='font-size:12px;color:#94a3b8'>{t["armor"]}</div></div>
         <div><div style='font-size:40px;font-weight:800;color:#38bdf8'>{card.get("airlock_blocked",0)}</div>
-             <div style='font-size:12px;color:#94a3b8'>Airlock遮断(行動)</div></div>
+             <div style='font-size:12px;color:#94a3b8'>{t["airlock"]}</div></div>
       </div>
       <table style='width:100%;border-collapse:collapse;font-size:13px'>
-        <tr style='color:#64748b;text-align:left'><th>ID</th><th>種別</th><th>結果</th><th>実行ツール</th><th>出典</th></tr>
-        {_rows_html(card)}
+        <tr style='color:#64748b;text-align:left'><th>{t["cid"]}</th><th>{t["ctype"]}</th><th>{t["cres"]}</th><th>{t["ctools"]}</th><th>{t["cref"]}</th></tr>
+        {_rows_html(card, lang)}
       </table>
     </div>"""
 
-def render_dashboard(off, on, fleet):
+def render_dashboard(off, on, fleet, lang="ja"):
+    lang = "en" if lang == "en" else "ja"; t = _T[lang]; other = "ja" if lang == "en" else "en"
     agents = fleet.get("agents", []) if fleet else []
     frows = []
     for a in agents:
-        badge = ("#22c55e", "SECURE ✓") if a["secure"] else ("#ff4d4f", "AT RISK")
-        frows.append(f"<tr><td style='font-weight:700'>{a['name']}</td><td style='color:#94a3b8'>{a['desc']}</td>"
+        badge = ("#22c55e", t["secure"]) if a["secure"] else ("#ff4d4f", t["risk"])
+        desc = _DESC_EN.get(a["desc"], a["desc"]) if lang == "en" else a["desc"]
+        frows.append(f"<tr><td style='font-weight:700'>{a['name']}</td><td style='color:#94a3b8'>{desc}</td>"
                      f"<td style='color:#64748b;font-size:12px'>{', '.join(a['allowed'])}</td>"
                      f"<td><span style='background:{badge[0]};color:#000;padding:2px 8px;border-radius:6px;font-weight:700'>{badge[1]}</span></td>"
-                     f"<td style='color:#94a3b8'>遮断{a['airlock_blocked']}/拒否{a['model_refused']}/突破{a['breaches']}/誤{a['false_positives']}</td></tr>")
+                     f"<td style='color:#94a3b8'>{t['bd'](a)}</td></tr>")
     over = (on or {}).get("avg_policy_overhead_ms", 0)
     return f"""<!doctype html><html><head><meta charset='utf-8'><title>Airlock</title></head>
 <body style='margin:0;background:#020617;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;padding:26px'>
   <div style='display:flex;align-items:baseline;gap:14px'>
     <div style='font-size:28px;font-weight:800'>🛰 Airlock</div>
-    <div style='color:#94a3b8'>Enterprise Agent Governance — Ship agents fast. Let none act unaudited.</div>
+    <div style='color:#94a3b8'>{t["sub"]}</div>
+    <a href='/dashboard?lang={other}' style='margin-left:auto;color:#38bdf8;font-size:13px;text-decoration:none;border:1px solid #1e293b;border-radius:8px;padding:4px 10px'>🌐 {"日本語" if lang=="en" else "English"}</a>
   </div>
-  <div style='color:#64748b;font-size:13px;margin:4px 0 10px'>多層防御: <b style='color:#a78bfa'>Model Armor(言語層)</b> + <b style='color:#38bdf8'>決定的ポリシー(行動層)</b> · model={MODEL} · Vertex(global) · 行動層overhead ≈ {over}ms/call</div>
-  <div style='color:#475569;font-size:11px;margin:0 0 16px;max-width:1180px'>※ ON突破0は、ブロック条件と突破条件が同一 danger() を共有する<b>構造的帰結(=実行境界での強制の検証)</b>。danger()が実脅威を過不足なく捉える網羅性の証明ではない。OFF突破/正当遮断は<b>モデル挙動に依存する観測値(非決定的)</b>。</div>
+  <div style='color:#64748b;font-size:13px;margin:4px 0 10px'>{t["layers"]} · model={MODEL} · Vertex(global) · {t["over"]} ≈ {over}ms/call</div>
+  <div style='color:#475569;font-size:11px;margin:0 0 16px;max-width:1180px'>{t["caveat"]}</div>
   <div style='display:flex;gap:18px;flex-wrap:wrap'>
-    {_panel(off or {}, "🔴 Governance OFF（無防備）", "#ff4d4f")}
-    {_panel(on or {}, "🟢 Governance ON（Airlock）", "#22c55e")}
+    {_panel(off or {}, t["off"], lang)}
+    {_panel(on or {}, t["on"], lang)}
   </div>
-  <div style='margin-top:22px;font-size:18px;font-weight:700'>Fleet Scoreboard（艦隊・全社ポリシー・最小権限）</div>
+  <div style='margin-top:22px;font-size:18px;font-weight:700'>{t["fleet"]}</div>
   <table style='width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;background:#0f172a;border-radius:12px;overflow:hidden'>
-    <tr style='color:#64748b;text-align:left;background:#0b1220'><th style='padding:8px'>Agent</th><th>役割</th><th>許可ツール(最小権限)</th><th>姿勢</th><th>内訳(ON)</th></tr>
+    <tr style='color:#64748b;text-align:left;background:#0b1220'><th style='padding:8px'>{t["fa"]}</th><th>{t["fr"]}</th><th>{t["ft"]}</th><th>{t["fp2"]}</th><th>{t["fb"]}</th></tr>
     {''.join(frows)}
   </table>
 </body></html>"""
@@ -538,7 +575,7 @@ async def seed():
             "fleet": [{"name": a["name"], "secure": a["secure"]} for a in r["fleet"]]}
 
 @app.get("/dashboard", response_class=HTMLResponse)
-def dashboard():
+def dashboard(lang: str = "ja"):
     try:
         off = _db().collection("dashboard").document("off").get().to_dict()
         on = _db().collection("dashboard").document("on").get().to_dict()
@@ -547,7 +584,7 @@ def dashboard():
         return HTMLResponse(f"<body style='background:#020617;color:#e2e8f0;font-family:sans-serif;padding:40px'>読込エラー: {e}<br>先に POST /seed を実行してください。</body>")
     if not on:
         return HTMLResponse("<body style='background:#020617;color:#e2e8f0;font-family:sans-serif;padding:40px'>未シードです。<code>POST /seed</code> を実行してから再読込してください。</body>")
-    return HTMLResponse(render_dashboard(off, on, fleet))
+    return HTMLResponse(render_dashboard(off, on, fleet, lang))
 
 class GenReq(BaseModel):
     sop: str
