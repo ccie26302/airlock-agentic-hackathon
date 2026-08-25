@@ -1,0 +1,132 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Airlock Architecture</title>
+<style>body{margin:0;background:#020617}</style></head>
+<body>
+<svg viewBox="0 0 1280 566" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,-apple-system,sans-serif">
+  <defs>
+    <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#64748b"/></marker>
+    <marker id="arg" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#22c55e"/></marker>
+    <marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#ff4d4f"/></marker>
+  </defs>
+  <rect width="1280" height="566" fill="#020617"/>
+  <!-- header -->
+  <text x="34" y="44" fill="#e2e8f0" font-size="30" font-weight="800">🛰 Airlock</text>
+  <text x="190" y="44" fill="#94a3b8" font-size="17">Enterprise Agent Governance ― Ship agents fast. Let none act unaudited.</text>
+  <text x="34" y="68" fill="#38bdf8" font-size="13" font-weight="700">Track: Fortified Enterprise Fleet　·　registry / runtime / governance / memory / observability</text>
+
+  <!-- User -->
+  <g>
+    <rect x="30" y="120" width="150" height="86" rx="12" fill="#0f172a" stroke="#1e293b"/>
+    <text x="105" y="150" fill="#e2e8f0" font-size="14" font-weight="700" text-anchor="middle">管理者 / Web UI</text>
+    <text x="105" y="172" fill="#94a3b8" font-size="11" text-anchor="middle">/new · /run</text>
+    <text x="105" y="188" fill="#94a3b8" font-size="11" text-anchor="middle">/dashboard</text>
+  </g>
+
+  <!-- ① Generator -->
+  <g>
+    <rect x="220" y="96" width="196" height="92" rx="12" fill="#0f172a" stroke="#334155"/>
+    <text x="234" y="120" fill="#38bdf8" font-size="12" font-weight="800">① GENERATOR</text>
+    <text x="234" y="142" fill="#e2e8f0" font-size="13">SOP(手順書) → AgentSpec</text>
+    <text x="234" y="160" fill="#94a3b8" font-size="11">構造化出力・最小権限で</text>
+    <text x="234" y="176" fill="#22c55e" font-size="11" font-weight="700">Gemini 3.5 (Vertex · global)</text>
+  </g>
+
+  <!-- ② Registry / Fleet -->
+  <g>
+    <rect x="220" y="214" width="196" height="86" rx="12" fill="#0f172a" stroke="#334155"/>
+    <text x="234" y="238" fill="#38bdf8" font-size="12" font-weight="800">② FLEET REGISTRY</text>
+    <text x="234" y="260" fill="#e2e8f0" font-size="13">艦隊(複数エージェント)</text>
+    <text x="234" y="278" fill="#94a3b8" font-size="11">最小権限スコープ・状態・点数</text>
+    <text x="234" y="294" fill="#f59e0b" font-size="11" font-weight="700">Firestore</text>
+  </g>
+
+  <!-- Attack battery -->
+  <g>
+    <rect x="220" y="330" width="196" height="118" rx="12" fill="#0f172a" stroke="#7f1d1d"/>
+    <text x="234" y="354" fill="#ff4d4f" font-size="12" font-weight="800">攻撃バッテリー</text>
+    <text x="234" y="374" fill="#cbd5e1" font-size="11">・間接インジェクション(ツール汚染)</text>
+    <text x="234" y="390" fill="#cbd5e1" font-size="11">・不可逆操作の無承認</text>
+    <text x="234" y="406" fill="#cbd5e1" font-size="11">・データ持ち出し(PII/秘密)</text>
+    <text x="234" y="422" fill="#cbd5e1" font-size="11">・送金先の改ざん / 直接注入</text>
+    <text x="234" y="440" fill="#64748b" font-size="10">＋誤検知対照(正当操作は通す)</text>
+  </g>
+
+  <!-- ③ Governed Runtime (ADK on Cloud Run) -->
+  <g>
+    <rect x="446" y="96" width="392" height="352" rx="14" fill="#0b1220" stroke="#334155"/>
+    <text x="462" y="122" fill="#38bdf8" font-size="12" font-weight="800">③ GOVERNED RUNTIME</text>
+    <text x="824" y="122" fill="#22c55e" font-size="11" font-weight="700" text-anchor="end">Google ADK · Cloud Run</text>
+
+    <rect x="470" y="140" width="344" height="60" rx="10" fill="#0f172a" stroke="#1e293b"/>
+    <text x="486" y="164" fill="#e2e8f0" font-size="13" font-weight="700">エージェント × N体 (Gemini)</text>
+    <text x="486" y="184" fill="#94a3b8" font-size="11">ツールを使って業務を実行</text>
+
+    <rect x="470" y="212" width="344" height="66" rx="10" fill="#0f172a" stroke="#1e293b"/>
+    <text x="486" y="235" fill="#e2e8f0" font-size="13" font-weight="700">Interceptor (ADK callbacks)</text>
+    <text x="486" y="255" fill="#94a3b8" font-size="11">before_tool = 実行前遮断 / after_tool = 出力検疫</text>
+    <text x="486" y="271" fill="#94a3b8" font-size="11">(間接インジェクションをツール出力から除去)</text>
+
+    <rect x="470" y="290" width="344" height="74" rx="10" fill="#0f172a" stroke="#22c55e"/>
+    <text x="486" y="313" fill="#22c55e" font-size="13" font-weight="800">Policy Engine</text>
+    <text x="486" y="333" fill="#cbd5e1" font-size="11">最小権限 / 高額は人間承認 / 送金先許可制</text>
+    <text x="486" y="349" fill="#cbd5e1" font-size="11">秘密・PIIの外部持出を遮断 / fail-closed</text>
+
+    <rect x="470" y="376" width="344" height="56" rx="10" fill="#0f172a" stroke="#7f1d1d"/>
+    <text x="486" y="398" fill="#ff4d4f" font-size="12" font-weight="700">計装モック危険ツール</text>
+    <text x="486" y="417" fill="#94a3b8" font-size="11">transfer_money / send_email / http_post / …</text>
+
+    <!-- allow/block chips -->
+    <rect x="726" y="292" width="80" height="22" rx="6" fill="#22c55e"/><text x="766" y="308" fill="#000" font-size="11" font-weight="800" text-anchor="middle">ALLOW</text>
+    <rect x="726" y="380" width="80" height="22" rx="6" fill="#ff4d4f"/><text x="766" y="396" fill="#000" font-size="11" font-weight="800" text-anchor="middle">BLOCK</text>
+  </g>
+
+  <!-- ④ Observe -->
+  <g>
+    <rect x="868" y="96" width="384" height="118" rx="12" fill="#0f172a" stroke="#334155"/>
+    <text x="884" y="120" fill="#38bdf8" font-size="12" font-weight="800">④ OBSERVABILITY</text>
+    <text x="884" y="144" fill="#e2e8f0" font-size="13">監査証跡 (全アクション・遮断理由)</text>
+    <text x="884" y="164" fill="#f59e0b" font-size="11" font-weight="700">Firestore + Cloud Logging</text>
+    <text x="884" y="190" fill="#e2e8f0" font-size="13">監査イベント配信</text>
+    <text x="884" y="208" fill="#a78bfa" font-size="11" font-weight="700">Pub/Sub (airlock-audit)</text>
+  </g>
+
+  <!-- Dashboard scorecard -->
+  <g>
+    <rect x="868" y="230" width="384" height="218" rx="12" fill="#0f172a" stroke="#334155"/>
+    <text x="884" y="254" fill="#e2e8f0" font-size="13" font-weight="800">通信簿 (決定的判定) · /dashboard</text>
+    <text x="884" y="274" fill="#64748b" font-size="10.5">危険条件 danger() をポリシーと採点で共有 → ON突破0を構造保証</text>
+
+    <rect x="884" y="288" width="168" height="140" rx="10" fill="#160b0b" stroke="#7f1d1d"/>
+    <text x="968" y="310" fill="#fca5a5" font-size="12" text-anchor="middle" font-weight="700">Governance OFF</text>
+    <text x="968" y="362" fill="#ff4d4f" font-size="44" text-anchor="middle" font-weight="800">2</text>
+    <text x="968" y="384" fill="#94a3b8" font-size="11" text-anchor="middle">突破 BREACH</text>
+    <text x="968" y="412" fill="#94a3b8" font-size="11" text-anchor="middle">(実損: 無承認送金・秘密流出)</text>
+
+    <rect x="1068" y="288" width="168" height="140" rx="10" fill="#07160d" stroke="#14532d"/>
+    <text x="1152" y="310" fill="#86efac" font-size="12" text-anchor="middle" font-weight="700">Governance ON</text>
+    <text x="1152" y="362" fill="#22c55e" font-size="44" text-anchor="middle" font-weight="800">0</text>
+    <text x="1152" y="384" fill="#94a3b8" font-size="11" text-anchor="middle">突破 0 · 誤検知 0</text>
+    <text x="1152" y="412" fill="#94a3b8" font-size="11" text-anchor="middle">overhead ≈ 0.04ms/call</text>
+  </g>
+
+  <!-- arrows -->
+  <line x1="180" y1="150" x2="216" y2="140" stroke="#64748b" stroke-width="1.6" marker-end="url(#ar)"/>
+  <line x1="318" y1="188" x2="318" y2="210" stroke="#64748b" stroke-width="1.6" marker-end="url(#ar)"/>
+  <line x1="416" y1="257" x2="466" y2="230" stroke="#64748b" stroke-width="1.6" marker-end="url(#ar)"/>
+  <line x1="416" y1="389" x2="466" y2="300" stroke="#ff4d4f" stroke-width="1.6" marker-end="url(#arr)"/>
+  <line x1="838" y1="180" x2="866" y2="150" stroke="#64748b" stroke-width="1.6" marker-end="url(#ar)"/>
+  <line x1="838" y1="330" x2="866" y2="200" stroke="#a78bfa" stroke-width="1.4" marker-end="url(#ar)"/>
+  <line x1="1060" y1="214" x2="1060" y2="228" stroke="#64748b" stroke-width="1.6" marker-end="url(#ar)"/>
+  <line x1="180" y1="176" x2="180" y2="360" stroke="#334155" stroke-width="1.2"/>
+  <line x1="180" y1="360" x2="216" y2="380" stroke="#64748b" stroke-width="1.4" marker-end="url(#ar)"/>
+
+  <!-- footer stack badges -->
+  <g font-size="12" font-weight="700">
+    <rect x="34" y="486" width="196" height="30" rx="8" fill="#0f172a" stroke="#22c55e"/><text x="132" y="506" fill="#22c55e" text-anchor="middle">Gemini 3.5 · Vertex AI (global)</text>
+    <rect x="246" y="486" width="120" height="30" rx="8" fill="#0f172a" stroke="#38bdf8"/><text x="306" y="506" fill="#38bdf8" text-anchor="middle">Google ADK</text>
+    <rect x="382" y="486" width="120" height="30" rx="8" fill="#0f172a" stroke="#38bdf8"/><text x="442" y="506" fill="#38bdf8" text-anchor="middle">Cloud Run</text>
+    <rect x="518" y="486" width="120" height="30" rx="8" fill="#0f172a" stroke="#f59e0b"/><text x="578" y="506" fill="#f59e0b" text-anchor="middle">Firestore</text>
+    <rect x="654" y="486" width="120" height="30" rx="8" fill="#0f172a" stroke="#a78bfa"/><text x="714" y="506" fill="#a78bfa" text-anchor="middle">Pub/Sub</text>
+  </g>
+  <text x="34" y="548" fill="#64748b" font-size="12">データフロー: SOP→生成(最小権限)→艦隊登録→実行時にPolicy Engineが危険操作を遮断/承認→全操作を監査→通信簿。判定はLLMでなく計装の事実(決定的)。</text>
+</svg>
+</body></html>

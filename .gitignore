@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+*.log
+deploy*.log
+dashboard_preview.html
+debug_one.py
+.DS_Store

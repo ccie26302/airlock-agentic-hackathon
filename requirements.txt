@@ -1,0 +1,5 @@
+google-adk==2.7.1
+fastapi
+uvicorn[standard]
+google-cloud-firestore
+google-cloud-pubsub
