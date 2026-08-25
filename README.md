@@ -70,10 +70,18 @@ open $URL/dashboard
 3. `GET /dashboard` → OFF(突破あり・赤) vs ON(突破0・誤検知0・緑) の対比＋Fleet Scoreboard。
 4. Cloud Console(Cloud Run / Vertex ログ / Firestore / Pub/Sub)で裏側を提示。
 
+## 注記（誠実性・前提）
+- **「ガバナンスON＝突破0」は構造的帰結**：ブロック条件と突破条件が同一の `danger()` を共有するため。これは*実行境界での強制(enforcement)の検証*であって、ポリシーが実脅威を網羅する証明ではない。
+- **OFFの突破数・正当遮断はモデル挙動に依存する観測値（非決定）**。確定して毎回突破するのは「$5,000の無承認返金」。他の攻撃がlandするかは回による。数は断定しない。
+- **overhead ≈ 0.04ms は `before` 側の危険判定のみ**（`after` の検査・LLM往復は含まない）。
+- リージョン：**Firestore はリージョナル名前付きDB(us-central1)、Vertex の Gemini 3.5 は `global` エンドポイント**（非対称だが正常）。
+- デプロイ実行者は `--source` ビルドのため Cloud Build/Artifact Registry 権限（owner 相当 or `roles/cloudbuild.builds.editor` 等）が要る。`python seed.py` はローカルの ADC 認証と名前付きDB `airlock` の実在が前提。
+- **デモは利便のため `--allow-unauthenticated`**。`/seed` `/generate` は Vertex 課金を伴うので、本番では認証必須(IAP/APIキー)にすること。攻撃ペイロード中の鍵等は合成ダミー。
+
 ## テスト
 ```bash
 pip install -r requirements.txt pytest
-GOOGLE_CLOUD_PROJECT=ci python -m pytest test_policy.py -q   # 決定的(LLM不要)
+GOOGLE_CLOUD_PROJECT=ci python -m pytest test_policy.py -q   # 決定的(LLM不要)。danger()＋遮断→採点の核心フローを回帰テスト
 ```
 
 ## セキュリティ/安全
