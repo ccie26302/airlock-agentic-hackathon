@@ -6,4 +6,6 @@ __pycache__/
 deploy*.log
 dashboard_preview.html
 debug_one.py
+seed_full.py
+poc_intercept.py
 .DS_Store

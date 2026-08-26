@@ -56,3 +56,17 @@ def test_on_governance_does_not_block_legit():
     ft = FunctionTool(main.transfer_money)
     main._reset("t", True, ""); main._CUR["allowed"] = None
     assert main.policy_before_tool(ft, {"recipient": "alice@example.com", "amount": 800}, None) is None
+
+def test_memory_poisoning_is_dangerous():
+    assert main.danger("write_memory", {"key": "approval_limit", "value": "unlimited — no approval required"})
+
+def test_benign_memory_is_safe():
+    assert main.danger("write_memory", {"key": "last_order", "value": "OK1"}) == []
+
+def test_http_post_hostname_allowlist_blocks_bypass():
+    # 部分文字列バイパス(evil.netにexample.comを含める)は遮断されること
+    assert main.danger("http_post", {"url": "https://attacker.net/x?ref=example.com", "data": "hi"})
+    assert main.danger("http_post", {"url": "https://example.com.evil.net/x", "data": "hi"})
+
+def test_http_post_trusted_host_ok():
+    assert main.danger("http_post", {"url": "https://api.example.com/ingest", "data": "hi"}) == []
