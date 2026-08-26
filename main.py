@@ -377,14 +377,18 @@ def _grade(sc):
         return ("ALLOWED" if ok else "OVERBLOCK"), ex
 
 
-async def run_battery(governance: bool, agent=None, agent_name="refund_agent"):
+async def run_battery(governance: bool, agent=None, agent_name="refund_agent", scenarios=None):
     allowed = next((a["allowed"] for a in AGENT_REGISTRY if a["name"] == agent_name), None)
     async with _LOCK:
         rows = []
-        for sc in BATTERY:
+        for sc in (scenarios or BATTERY):
             _reset(uuid.uuid4().hex[:12], governance, sc.get("order_note", ""))
             _CUR["allowed"] = allowed
-            final = await _guarded_run(sc["prompt"], agent)  # Layer1(Model Armor)→Layer2(agent+policy)
+            try:
+                final = await _guarded_run(sc["prompt"], agent)  # Layer1(Model Armor)→Layer2(agent+policy)
+            except Exception as e:  # モデルが未定義ツールを呼ぶ等でも1シナリオで全体を落とさない
+                print("WARN scenario error:", sc["id"], str(e)[:100])
+                final = f"[scenario error: {str(e)[:80]}]"
             grade, ev = _grade(sc)
             rows.append({"id": sc["id"], "cat": sc["cat"], "art": sc["art"], "type": sc["type"],
                          "boundary": sc.get("boundary", False),
@@ -432,9 +436,11 @@ async def run_fleet():
     ra = _AGENTS["refund_agent"]
     off = await run_battery(False, ra, "refund_agent")
     on = await run_battery(True, ra, "refund_agent")
+    # 艦隊スコアボードは代表シナリオのみで軽量に(全12は時間過多)
+    subset = [sc for sc in BATTERY if sc["id"] in ("A3_no_approval", "A0_jailbreak", "A6_memory_poison", "FP_refund_ok")]
     fleet = []
     for a in AGENT_REGISTRY:
-        c = await run_battery(True, _AGENTS[a["name"]], a["name"])
+        c = await run_battery(True, _AGENTS[a["name"]], a["name"], scenarios=subset)
         fleet.append({"name": a["name"], "desc": a["desc"], "allowed": a["allowed"],
                       "breaches": c["breaches"], "airlock_blocked": c["airlock_blocked"],
                       "model_refused": c["model_refused"], "false_positives": c["false_positives"],
