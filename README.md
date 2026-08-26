@@ -98,6 +98,7 @@ open "$URL/dashboard?lang=en"
 - A2(間接インジェクション)を止めるのは L2 の**受取人allowlist**であり、after_tool の正規表現検疫は補助の1層。
 - リージョン：Firestore はリージョナル(us-central1)、Vertex Gemini 3.5 は `global`（非対称だが正常）。
 - **認証モデル（実装済）**: 公開面は**読取(`/dashboard` `/ready`)＋ON実行(`/run`は未認証だとgovernance強制ON)**のみ。副作用・課金系(`/seed` `/generate` `/audit`、および `/run` のOFF指定)は **`X-Airlock-Token` ヘッダ必須**(env `AIRLOCK_TOKEN`)。これで未認証のopen relay/持ち出し中継/課金DoSを封鎖。攻撃ペイロード中の鍵は合成ダミー。
+- **L1のしきい値は実測で HIGH に調整**：`LOW_AND_ABOVE` では日本語の正当な業務依頼（例「$200 を精算して完了メールを送って」）が MEDIUM 確信度で誤ブロックされた。攻撃側の確信度を測ると主要な注入/脱獄は HIGH で捕捉できるため HIGH に変更＝**誤ブロック 0**。閾値を下回る攻撃（秘密を外部webhookへ）は素通りするが、**行動層が実際に遮断**した（許可外URL＋秘密の同送）。これが多層防御の役割分担。
 - **L3の `--sandbox-launcher` はプレビュー機能**（`gcloud beta`, 要事前有効化/allowlist）。無効環境では `run_analysis`→`SANDBOX_UNAVAILABLE`、`/sandbox_probe`→`cli unavailable` に**graceful degrade**（L1/L2は稼働）。
 - **提出前スモーク必須**: `curl $URL/ready`(Firestore到達) と `curl -XPOST $URL/run -d '{"prompt":"refund $10 to alice@example.com"}'`(Gemini疎通)を1回。モデルIDは一次情報で再確認。
 
