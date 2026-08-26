@@ -1,4 +1,6 @@
 google-adk==2.7.1
+google-genai
+google-auth
 fastapi
 uvicorn[standard]
 google-cloud-firestore

@@ -26,7 +26,7 @@ Teams can build an agent in an afternoon, but they can't *deploy* one. One over-
 - **Governance ON: zero breaches (structural), zero legit ops blocked.** Attacks are caught across layers — overt injections by Model Armor, plausible-but-forbidden actions by the policy engine.
 - **Layer 3, verified live and LLM-independently:** the *same* service-account-token-theft code **leaks the real token when run directly**, but is **contained inside the Cloud Run sandbox** (network unreachable). This is the article-verified property, reproduced inside Airlock and shown on the dashboard.
 - **Governance OFF: real breaches occur** — e.g., an unapproved $5,000 refund executes and a synthetic API key is POSTed to an external endpoint. Whether a given attack *lands* depends on the model, so the OFF count varies run to run — that unpredictability is exactly the enterprise problem Airlock backstops. (The over-limit refund breaches every run.)
-- **Marginal governance overhead ≈ 0.04 ms/call** (the before-tool check; LLM latency unchanged).
+- **L2 policy-check ≈ 0.04 ms/call** (the before-tool predicate only — this number *excludes* Model Armor's network round-trip and the sandbox spawn cost, which are separate; we call that out rather than present a one-sided figure).
 
 ## How we built it
 - **Gemini 3.5 Flash on Vertex AI** (global) — SOP→spec generation (structured output); the agents run on Gemini too. Attack scenarios are fixed, hand-authored payloads (not model-generated) for reproducibility.

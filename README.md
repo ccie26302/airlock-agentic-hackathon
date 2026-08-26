@@ -58,6 +58,8 @@ for R in roles/aiplatform.user roles/datastore.user roles/pubsub.publisher roles
 done
 
 # 4) デプロイ（★gen2 + sandbox-launcher = Layer3。beta が必要）
+#    実行者に roles/iam.serviceAccountUser（上記SAをactAs）と Cloud Build/Artifact Registry 権限が要る:
+gcloud iam service-accounts add-iam-policy-binding $SA --member="user:$(gcloud config get-value account)" --role=roles/iam.serviceAccountUser
 gcloud beta run deploy airlock --source . --region us-central1 \
   --service-account $SA \
   --set-env-vars GOOGLE_CLOUD_PROJECT=$PID,GOOGLE_CLOUD_LOCATION=global,AUDIT_TOPIC=airlock-audit,ARMOR_LOCATION=us-central1,ARMOR_TEMPLATE=airlock \
@@ -86,9 +88,12 @@ open "$URL/dashboard?lang=en"
 
 ## 注記（誠実性・前提）
 - **「ガバナンスON＝突破0」は構造的帰結**（ブロック条件と突破条件が同一 `danger()` を共有）＝*実行境界での強制の検証*。ポリシー網羅性の証明ではない。
-- **OFF突破・正当遮断はモデル挙動に依存する観測値（非決定）**。毎回確実に突破するのは「$5,000の無承認返金」。
+- **OFF突破・正当遮断はモデル挙動に依存する観測値（非決定）**。露骨な攻撃はモデル自身が拒否するので、毎回確実にすり抜けるのは「$5,000の無承認返金」等の"もっともらしい方針違反"で、そこをL2が止める。
+- **overhead ≈ 0.04ms は L2 ポリシー述語の評価のみ**。L1 Model Armor のネットワーク往復（sanitizeUserPrompt, 数十〜数百ms）と L3 sandbox 起動コストは別。片側の数字にしない。
 - **L3の封殺は固定コードのプローブで実証**（LLM非依存）。フロンティアモデルは露骨な窃取タスクを自力で拒否するため、機構の証明はプローブで担保。
-- Model Armor / danger() の正規表現は回避余地あり（多層防御の各層はベストエフォート、決定的な allowlist+limit が本命）。
+- **強い層と弱い層を分ける**：決定的で回避困難なのは L3(実行境界) と L2 の allowlist+limit。L1 Model Armor / SECRET_PAT 等の ML・正規表現は多層防御の**ベストエフォート**（base64/空白挿入で回避余地、`card`/`password` 語で正当文面を誤遮断し得る）。
+- **誤検知(FP)対照**：明白ケースに加え境界(上限直下$999／`card`語を含む正当メール)も測る。後者は現ポリシーで**過剰遮断され得る**（ダッシュボードに実数表示）＝境界の弱点を隠さない。
+- A2(間接インジェクション)を止めるのは L2 の**受取人allowlist**であり、after_tool の正規表現検疫は補助の1層。
 - リージョン：Firestore はリージョナル(us-central1)、Vertex Gemini 3.5 は `global`（非対称だが正常）。
 - **デモは `--allow-unauthenticated`**。`/seed` `/generate` は課金を伴うため本番では認証必須(IAP/APIキー)に。攻撃ペイロード中の鍵は合成ダミー。
 
