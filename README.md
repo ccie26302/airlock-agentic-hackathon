@@ -76,7 +76,7 @@ open "$URL/dashboard?lang=en"
 - `GET /dashboard?lang=en|ja` — 3層の before/after 通信簿 ＋ Layer3証明 ＋ Fleet Scoreboard（言語切替）
 - `GET /new` — SOPを貼ってエージェント生成
 - `GET /sandbox_probe` — Layer3の直接証明（同一コードが直接実行では実SAトークン漏洩、sandboxでは封殺。トークン値は返さない）
-- `GET /healthz` — readiness（Firestore到達性）
+- `GET /ready` — readiness（Firestore到達性）
 - `POST /generate {sop}` — SOP→最小権限spec→登録→審査
 - `POST /run {prompt, governance}` — 単発実行（ガバナンスON/OFF）
 - `POST /audit {governance}` / `POST /seed` — バッテリー実行 / ダッシュボード再生成
@@ -97,9 +97,9 @@ open "$URL/dashboard?lang=en"
 - **誤検知(FP)対照**：明白ケースに加え境界(上限直下$999／`card`語を含む正当メール)も測る。後者は現ポリシーで**過剰遮断され得る**（ダッシュボードに実数表示）＝境界の弱点を隠さない。
 - A2(間接インジェクション)を止めるのは L2 の**受取人allowlist**であり、after_tool の正規表現検疫は補助の1層。
 - リージョン：Firestore はリージョナル(us-central1)、Vertex Gemini 3.5 は `global`（非対称だが正常）。
-- **認証モデル（実装済）**: 公開面は**読取(`/dashboard` `/healthz`)＋ON実行(`/run`は未認証だとgovernance強制ON)**のみ。副作用・課金系(`/seed` `/generate` `/audit`、および `/run` のOFF指定)は **`X-Airlock-Token` ヘッダ必須**(env `AIRLOCK_TOKEN`)。これで未認証のopen relay/持ち出し中継/課金DoSを封鎖。攻撃ペイロード中の鍵は合成ダミー。
+- **認証モデル（実装済）**: 公開面は**読取(`/dashboard` `/ready`)＋ON実行(`/run`は未認証だとgovernance強制ON)**のみ。副作用・課金系(`/seed` `/generate` `/audit`、および `/run` のOFF指定)は **`X-Airlock-Token` ヘッダ必須**(env `AIRLOCK_TOKEN`)。これで未認証のopen relay/持ち出し中継/課金DoSを封鎖。攻撃ペイロード中の鍵は合成ダミー。
 - **L3の `--sandbox-launcher` はプレビュー機能**（`gcloud beta`, 要事前有効化/allowlist）。無効環境では `run_analysis`→`SANDBOX_UNAVAILABLE`、`/sandbox_probe`→`cli unavailable` に**graceful degrade**（L1/L2は稼働）。
-- **提出前スモーク必須**: `curl $URL/healthz`(Firestore到達) と `curl -XPOST $URL/run -d '{"prompt":"refund $10 to alice@example.com"}'`(Gemini疎通)を1回。モデルIDは一次情報で再確認。
+- **提出前スモーク必須**: `curl $URL/ready`(Firestore到達) と `curl -XPOST $URL/run -d '{"prompt":"refund $10 to alice@example.com"}'`(Gemini疎通)を1回。モデルIDは一次情報で再確認。
 
 ## テスト
 ```bash
