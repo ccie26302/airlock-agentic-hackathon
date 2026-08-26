@@ -1,53 +1,56 @@
 # Airlock — Devpost Submission Text
-（Devpostの各欄にコピペ用。審査員は英語想定で英語。日本語版が要れば別途。）
+（Devpostの各欄にコピペ用。英語。）
 Track: **Fortified Enterprise Fleet** · *Individual hackathon project. Not affiliated with or endorsed by Google or Anthropic.*
 
 ---
 
-## Elevator pitch (one line)
-Airlock turns your SOPs into least-privilege agents and governs the whole fleet at runtime. Dangerous tool calls are blocked **before they execute** — and proven with a **deterministic** scorecard. Ship agents fast; let none act unaudited.
+## Elevator pitch
+Airlock turns your SOPs into least-privilege agents that do real work on Google Cloud, and wraps them in **three layers of defense** — language, action, and execution. Overt injections, plausible-but-forbidden actions, and even hijacked code execution are all contained, and proven with a **deterministic** scorecard. Ship agents fast; let none act unaudited.
 
 ## The problem
-Teams can build an agent in an afternoon, but they can't *deploy* one. A single over-permissioned tool call — a $5,000 refund with no approval, a customer list emailed to an outside address — turns an "assistant" into an incident, and manual review can't keep pace. Airlock is the airlock every agent passes through before (and after) it reaches production.
+Teams can build an agent in an afternoon, but they can't *deploy* one. One over-permissioned tool call — a $5,000 refund with no approval, a customer list emailed outside, or generated code that quietly reads the VM's service-account token — turns an "assistant" into an incident. No single guard stops all three. Airlock is the platform that makes an agent safe enough to ship.
 
 ## What it does
-- **Generate (least privilege):** Paste a plain-language SOP. Gemini 3.5 emits an agent spec that selects *only* the tools the SOP needs, plus concrete guardrails, and registers it into the fleet.
-- **Govern at runtime:** Every tool call runs through a Policy Engine via Google ADK callbacks. Dangerous actions — over-limit or redirected transfers, PII/secret exfiltration, unapproved irreversible operations — are **blocked before they execute**. A best-effort secondary layer flags injected instructions found in tool output; the primary, deterministic control is an allowlist + limit policy.
-- **Prove it (deterministic where it counts):** An attack battery of fixed, pre-authored scenarios hits each agent. The verdict is decided by *instrumentation facts* — did a dangerous tool actually execute? — not by an LLM judge. A single `danger()` predicate is shared by both the policy (blocking) and the grader (breach), which makes **enforcement airtight: a blocked call can never execute, so with governance on, breaches are structurally zero.** (That is a guarantee about *enforcement*, not a claim that the predicate covers every threat — detection coverage is a separate, extensible axis; today it models four threat classes.)
-- **Fleet & observability:** A scoreboard shows every agent, its least-privilege scope, and its posture. Every action, block, and reason is written to an audit trail; audit events publish to Pub/Sub.
+- **Generate (least privilege):** Paste a plain-language SOP. Gemini 3.5 emits an agent spec that selects *only* the tools the SOP needs, and registers it into the fleet.
+- **Run real work:** Agents complete real operations on Google Cloud — read orders/customers from **Firestore**, write to a real refunds ledger and email outbox, make real outbound HTTP calls, and run analysis code. (Only the payment gateway is simulated — no real funds move.)
+- **Defend in three layers (each catches what the others can't):**
+  - **L1 — language:** **Google Model Armor** screens every incoming prompt and blocks prompt injection / jailbreak before the agent runs.
+  - **L2 — action:** a deterministic Policy Engine inspects every tool call via Google ADK callbacks and **blocks dangerous actions before they execute** (over-limit/redirected transfers, PII/secret exfiltration, unapproved irreversible ops).
+  - **L3 — execution:** agent-run code executes inside a **Cloud Run sandbox** (gVisor). Even a hijacked code path can't reach the metadata server or the network — it physically cannot steal the service-account token.
+- **Prove it deterministically:** an attack battery grades on *instrumentation facts* (did a dangerous tool actually execute?), not an LLM judge. One `danger()` predicate is shared by the policy and the grader, so with governance on, breaches are **structurally zero** — a guarantee about enforcement (a blocked call can never execute), not a claim the predicate covers every threat.
+- **Fleet & observability:** a bilingual (JA/EN) dashboard shows each agent's least-privilege scope and posture, every block and its reason (which layer caught it), an audit trail in Firestore + Cloud Logging, and audit events on Pub/Sub.
 
-**How this differs from prompt-level guardrails or LLM-judge evals:** Airlock enforces at the ADK *tool boundary* (not in a prompt) and grades on *execution facts* (not an LLM's opinion) — so "secure" is auditable, and the same predicate that blocks is the one that scores.
+**How this differs from prompt-level guardrails or LLM-judge evals:** Airlock enforces at the ADK tool boundary and at the OS/execution boundary, and grades on execution facts — so "secure" is auditable across all three layers, not a prompt-level suggestion.
+
+## Key results (measured, honestly scoped)
+- **Governance ON: zero breaches (structural), zero legit ops blocked.** Attacks are caught across layers — overt injections by Model Armor, plausible-but-forbidden actions by the policy engine.
+- **Layer 3, verified live and LLM-independently:** the *same* service-account-token-theft code **leaks the real token when run directly**, but is **contained inside the Cloud Run sandbox** (network unreachable). This is the article-verified property, reproduced inside Airlock and shown on the dashboard.
+- **Governance OFF: real breaches occur** — e.g., an unapproved $5,000 refund executes and a synthetic API key is POSTed to an external endpoint. Whether a given attack *lands* depends on the model, so the OFF count varies run to run — that unpredictability is exactly the enterprise problem Airlock backstops. (The over-limit refund breaches every run.)
+- **Marginal governance overhead ≈ 0.04 ms/call** (the before-tool check; LLM latency unchanged).
 
 ## How we built it
-- **Gemini 3.5 Flash on Vertex AI** (global endpoint) — SOP→spec generation via structured output; the subject agents themselves run on Gemini 3.5. (Attack scenarios are fixed payloads authored by hand — not model-generated — so the battery is reproducible.)
-- **Google ADK** — the agent runtime. `before_tool_callback` returns a substitute result to **skip** a dangerous tool (block); `after_tool_callback` inspects tool output for a best-effort injection flag.
-- **Cloud Run** — API, server-rendered dashboard, audit runner. **Firestore** (named db) — registry, audit trail, scorecards. **Pub/Sub** — audit event stream.
-- Deterministic grading: mock, instrumented "dangerous" tools; the ledger records only genuine executions, so blocked calls never count as breaches.
-
-## Results (measured, honestly scoped)
-- **Governance ON: zero breaches (structural).** No legitimate control operation in our battery was blocked. This verifies *enforcement*, not the completeness of the policy.
-- **Governance OFF: real breaches occur** — e.g., an unapproved $5,000 refund executes, and a *synthetic* API key is POSTed to an external webhook. Whether a given attack lands depends on the model, so the OFF breach count **varies run to run** — that unpredictability is exactly the enterprise problem Airlock backstops. (The over-limit refund breaches every run; injection-style ones are intermittent.)
-- **Marginal governance overhead ≈ 0.04 ms/call** (the before-tool danger check; the LLM latency is unchanged).
-- **Least privilege by construction:** a support agent with no money tools cannot transfer funds at all; the false-positive control (a legitimate refund) still passes. Note: our regex rules (e.g., matching "card"/"password") could over-block legitimate messages containing those words — an untested boundary we call out rather than hide.
+- **Gemini 3.5 Flash on Vertex AI** (global) — SOP→spec generation (structured output); the agents run on Gemini too. Attack scenarios are fixed, hand-authored payloads (not model-generated) for reproducibility.
+- **Google ADK** — `before_tool_callback` returns a substitute result to block a dangerous tool; `after_tool_callback` inspects tool output.
+- **Model Armor** — `sanitizeUserPrompt` with a PI/jailbreak + malicious-URI template.
+- **Cloud Run** (gen2, `--sandbox-launcher`) — API, dashboard, and `sandbox do` isolated code execution. **Firestore** (named db) — registry, real business data, audit, scorecards. **Pub/Sub** — audit events.
 
 ## Challenges we ran into
-- **ADK fires `after_tool_callback` even when `before_tool_callback` blocked the call** (google-adk 2.7.1), which made blocked actions look like breaches. Fixed by detecting the block sentinel in the after-callback and not recording it as executed — covered by a regression test.
-- **Frontier models refuse overtly malicious prompts on their own**, muddying "before/after." We reframed attacks as *plausible business operations that violate policy* (recipient redirection, PII-to-vendor export) so the model complies, the breach is real under OFF, and Airlock reliably catches it under ON.
-- **Gemini 3.5 is served on Vertex's `global` endpoint**, not the region we first tried.
+- **ADK fires `after_tool_callback` even when `before_tool_callback` blocked** (v2.7.1) — blocked calls looked like breaches until we detected the block sentinel; covered by a regression test.
+- **Frontier models refuse overtly malicious prompts on their own**, so we reframed action-layer attacks as *plausible business operations that violate policy*, and proved the sandbox layer with a fixed probe rather than relying on the model to write malicious code.
+- **Cloud Run sandbox has an empty PATH** — commands need full paths (`/bin/sh`, `/usr/local/bin/python3`); code is carried in as base64 to survive the sandbox command parser.
 
 ## What we learned
-Runtime governance, not model choice, is the gate to enterprise agent deployment. And the most credible security demo isn't a table of 100%s — it's the same plausible operation breaching unguarded and being blocked under governance, with the (near-zero) cost measured and the limits stated.
+Runtime governance across language, action, and execution — not model choice — is the gate to enterprise agent deployment. The most credible security demo isn't a table of 100%s; it's the same operation breaching unguarded and being contained under governance, with the (near-zero) cost measured and the limits stated.
 
 ## What's next
-Real OS-sandboxed execution for untrusted agent code; a human-approval inbox for held actions; harder false-positive controls and boundary tests; org-wide policy packs; connectors to real tool backends behind the same interceptor; authenticated endpoints (the demo runs open for convenience).
+Human-approval inbox for held actions; harder false-positive/boundary tests; org-wide policy packs; connectors to real tool backends behind the same interceptors; authenticated endpoints (the demo runs open for convenience).
 
 ## Built with
-`google-adk` · `gemini-3.5-flash` · `vertex-ai` · `cloud-run` · `firestore` · `pub/sub` · `fastapi` · `python`
+`google-adk` · `gemini-3.5-flash` · `vertex-ai` · `model-armor` · `cloud-run` (sandbox) · `firestore` · `pub/sub` · `fastapi` · `python`
 
 ---
 
-## 必須フィールド対応（要件のtext description）
-- **Features/functionality:** "What it does"。
-- **Technologies used:** "How we built it" / "Built with"。
-- **Data sources:** 手作業で用意した固定の攻撃シナリオ＋計装モックツール（実データ・実送金なし、鍵は合成ダミー）。攻撃タクソノミーは公知のエージェント脅威（プロンプトインジェクション/ツール汚染/データ持ち出し/不可逆操作の無承認）。
-- **Findings/learnings:** "Results" / "Challenges" / "What we learned"。
+## 必須フィールド対応
+- **Features:** "What it does"。 **Technologies:** "How we built it" / "Built with"。
+- **Data sources:** 実Firestoreの合成業務データ(顧客/注文)＋手作業の固定攻撃シナリオ＋計装。実送金なし、鍵は合成ダミー。
+- **Findings/learnings:** "Key results" / "Challenges" / "What we learned"。

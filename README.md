@@ -1,28 +1,37 @@
-# 🛰 Airlock — Enterprise Agent Governance
+# 🛰 Airlock — Enterprise AI Agent Platform
 
-**Ship agents fast. Let none act unaudited.**
+**Security is the strength. Ship agents fast; let none act unaudited.**
 
-手順書(SOP)からAIエージェントを自動生成し、「艦隊(Fleet)」として登録・統治する。裏で各エージェントに攻撃バッテリーを撃ち込み、実行時に危険操作を遮断／承認へ回し、**決定的判定のセキュリティ通信簿**で本番投入可否を示す ― エンタープライズ向けエージェント基盤。
+手順書(SOP)からAIエージェントを最小権限で自動生成し、「艦隊(Fleet)」として登録・実行する基盤。エージェントは実タスクを実行し、**3層防御**が言語・行動・実行の各段で守り、全操作を監査する。
 
-> All Things Agentic Hackathon / Track: **Fortified Enterprise Fleet**
+> All Things Agentic Hackathon / Track: **Fortified Enterprise Fleet** · Individual project, not affiliated with or endorsed by Google/Anthropic.
 
-## 何をするか
-- **Generator**: SOPを貼ると Gemini が**最小権限**のエージェント仕様(使うツール＋ガードレール)を生成し、艦隊に登録。
-- **Governed Runtime (ADK)**: 全ツール呼び出しを ADK の `before_tool_callback` で検査し、危険な操作(限度超過の送金・送金先改ざん・PII/秘密の外部持ち出し等)を**実行前に遮断**。`after_tool_callback` でツール出力に混入した**間接プロンプトインジェクションを検疫**。
-- **Deterministic Scorecard**: 合否は LLM でなく**計装の事実**(危険ツールが実際に実行されたか)で判定 → 数値が安定。`danger()` の単一定義をポリシーと採点で共有し、**ガバナンスON時の突破=0 を構造的に保証**。
-- **Fleet Scoreboard / Observability**: 複数エージェントの姿勢・最小権限スコープを一覧。全操作は Firestore + Cloud Logging に監査証跡、監査イベントは Pub/Sub へ。
+## 3層防御（defense in depth）
+| 層 | 実装 | 守る対象 |
+|---|---|---|
+| **L1 言語層** | **Google Model Armor** (`sanitizeUserPrompt`) | 露骨なプロンプトインジェクション/脱獄 |
+| **L2 行動層** | 決定的ポリシー（ADK `before_tool_callback`） | 一見まっとうな違反（高額返金・送金先改ざん・PII/秘密の外部持出） |
+| **L3 実行層** | **Cloud Run Sandbox**（gVisor, `--sandbox-launcher`） | 乗っ取られたコード実行（SAトークン窃取・外部持出） |
+
+「一方では守れない」を各層が補完する。判定は LLM でなく**計装の事実**（危険ツールが実際に実行されたか）で決める。
+
+## エージェントは実基盤で実タスクを行う
+ツールは本物の Google Cloud 副作用を持つ（決済ゲートウェイのみ模擬）:
+- `read_order_note` / `get_customer_list` … 実 **Firestore** 読取（orders / customers）
+- `transfer_money` … 決済は模擬だが実 Firestore **refunds 台帳**に記録
+- `send_email` … 実 **outbox** に投函（実送信はしない）
+- `http_post` … **本物の外部 HTTP 送信**（OFF なら実際に外部へ飛ぶ）
+- `run_analysis` … **Cloud Run sandbox 内でコード実行**（L3）
 
 ## アーキテクチャ（要件スタックの対応）
-| レイヤ | 実装 | ハッカソン必須要件 |
+| レイヤ | 実装 | 必須要件 |
 |---|---|---|
 | 生成/審査の知能 | **Gemini 3.5 Flash**(Vertex AI, `global`) | Gemini 3.5以降 ✅ |
 | エージェント実行＋介入 | **Google ADK**(callbacks/tools) | Google Agent Framework ✅ |
-| API/UI/監査ワーカー | **Cloud Run** | Google Cloud インフラ ✅ |
-| レジストリ/監査証跡/通信簿 | **Firestore**(named db `airlock`) | 〃 |
+| API/UI/監査ワーカー/sandbox | **Cloud Run** (gen2, sandbox-launcher) | Google Cloud インフラ ✅ |
+| レジストリ/監査/通信簿 | **Firestore**(named db `airlock`) | 〃 |
 | 監査イベント配信 | **Pub/Sub**(`airlock-audit`) | 〃 |
-
-## 前提
-- gcloud CLI 認証済み / 課金有効なGCPプロジェクト / Python 3.12
+| 言語層セキュリティ | **Model Armor** | （加点） |
 
 ## セットアップ（コピペで再現）
 ```bash
@@ -30,63 +39,61 @@ export PID=<your-project-id>
 gcloud config set project $PID
 
 # 1) API 有効化
-gcloud services enable aiplatform.googleapis.com run.googleapis.com \
-  firestore.googleapis.com pubsub.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com
+gcloud services enable aiplatform.googleapis.com run.googleapis.com firestore.googleapis.com \
+  pubsub.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com modelarmor.googleapis.com
 
-# 2) Firestore(named db) と Pub/Sub トピック
+# 2) Firestore(named db)・Pub/Sub・Model Armor テンプレート
 gcloud firestore databases create --database=airlock --location=us-central1 --type=firestore-native
 gcloud pubsub topics create airlock-audit
+TOKEN=$(gcloud auth print-access-token)
+curl -s -X POST "https://modelarmor.us-central1.rep.googleapis.com/v1/projects/$PID/locations/us-central1/templates?template_id=airlock" \
+  -H "Authorization: Bearer $TOKEN" -H "x-goog-user-project: $PID" -H "Content-Type: application/json" \
+  -d '{"filterConfig":{"piAndJailbreakFilterSettings":{"filterEnforcement":"ENABLED","confidenceLevel":"LOW_AND_ABOVE"},"maliciousUriFilterSettings":{"filterEnforcement":"ENABLED"}}}'
 
 # 3) 実行用サービスアカウント(最小権限)
 gcloud iam service-accounts create airlock-run --display-name="Airlock Cloud Run"
 SA=airlock-run@$PID.iam.gserviceaccount.com
-for R in roles/aiplatform.user roles/datastore.user roles/pubsub.publisher; do
+for R in roles/aiplatform.user roles/datastore.user roles/pubsub.publisher roles/modelarmor.user; do
   gcloud projects add-iam-policy-binding $PID --member="serviceAccount:$SA" --role=$R --condition=None
 done
 
-# 4) デプロイ
-gcloud run deploy airlock --source . --region us-central1 \
+# 4) デプロイ（★gen2 + sandbox-launcher = Layer3。beta が必要）
+gcloud beta run deploy airlock --source . --region us-central1 \
   --service-account $SA \
-  --set-env-vars GOOGLE_CLOUD_PROJECT=$PID,GOOGLE_CLOUD_LOCATION=global,AUDIT_TOPIC=airlock-audit \
-  --allow-unauthenticated --timeout 900
+  --set-env-vars GOOGLE_CLOUD_PROJECT=$PID,GOOGLE_CLOUD_LOCATION=global,AUDIT_TOPIC=airlock-audit,ARMOR_LOCATION=us-central1,ARMOR_TEMPLATE=airlock \
+  --allow-unauthenticated --timeout 900 --execution-environment gen2 --sandbox-launcher
 
-# 5) ダッシュボード用データをシード(艦隊を実測)
+# 5) シード(艦隊を実測 + Layer3プローブ)
 URL=$(gcloud run services describe airlock --region us-central1 --format='value(status.url)')
 curl -X POST $URL/seed        # もしくはローカルで: python seed.py
-open $URL/dashboard
+open "$URL/dashboard?lang=en"
 ```
 
 ## エンドポイント
-- `GET /dashboard` — before/after 通信簿 ＋ Fleet Scoreboard（デモの主画面）
-- `GET /new` — SOPを貼ってエージェント生成（デモの掴み）
-- `POST /generate {sop}` — SOP→AgentSpec(最小権限)→登録→審査
-- `POST /audit {governance}` — 攻撃バッテリーを実行し通信簿を返す
-- `POST /run {prompt, governance, order_note}` — 単発実行（ガバナンスON/OFF切替）
-- `POST /seed` — ダッシュボードデータを再生成
+- `GET /dashboard?lang=en|ja` — 3層の before/after 通信簿 ＋ Layer3証明 ＋ Fleet Scoreboard（言語切替）
+- `GET /new` — SOPを貼ってエージェント生成
+- `GET /sandbox_probe` — Layer3の直接証明（同一コードが直接実行では実SAトークン漏洩、sandboxでは封殺。トークン値は返さない）
+- `POST /generate {sop}` — SOP→最小権限spec→登録→審査
+- `POST /run {prompt, governance}` — 単発実行（ガバナンスON/OFF）
+- `POST /audit {governance}` / `POST /seed` — バッテリー実行 / ダッシュボード再生成
 
 ## デモの流れ
-1. `GET /new` で返品SOPを貼る → エージェントが生まれ艦隊に登録（最小権限で生成）。
-2. `POST /run` を `governance:false` で攻撃 → 危険操作が**実行される(事故)**。`governance:true` で同じ攻撃 → **遮断**。
-3. `GET /dashboard` → OFF(突破あり・赤) vs ON(突破0・誤検知0・緑) の対比＋Fleet Scoreboard。
-4. Cloud Console(Cloud Run / Vertex ログ / Firestore / Pub/Sub)で裏側を提示。
+1. `GET /new` で返品SOP → 最小権限エージェント生成・艦隊登録。
+2. `POST /run` を `governance:false→true` で同じ攻撃 → OFF は実行され事故、ON は遮断。
+3. `GET /sandbox_probe` → 同一コードが直接実行では実SAトークン漏洩、sandbox では network unreachable で封殺（L3）。
+4. `GET /dashboard?lang=en` → OFF vs ON ＋ 3層内訳(Armor/Airlock) ＋ Layer3証明 ＋ Fleet。
+5. Cloud Console で Cloud Run / Vertexログ / Firestore / Pub/Sub の裏側を提示。
 
 ## 注記（誠実性・前提）
-- **「ガバナンスON＝突破0」は構造的帰結**：ブロック条件と突破条件が同一の `danger()` を共有するため。これは*実行境界での強制(enforcement)の検証*であって、ポリシーが実脅威を網羅する証明ではない。
-- **OFFの突破数・正当遮断はモデル挙動に依存する観測値（非決定）**。確定して毎回突破するのは「$5,000の無承認返金」。他の攻撃がlandするかは回による。数は断定しない。
-- **overhead ≈ 0.04ms は `before` 側の危険判定のみ**（`after` の検査・LLM往復は含まない）。
-- リージョン：**Firestore はリージョナル名前付きDB(us-central1)、Vertex の Gemini 3.5 は `global` エンドポイント**（非対称だが正常）。
-- デプロイ実行者は `--source` ビルドのため Cloud Build/Artifact Registry 権限（owner 相当 or `roles/cloudbuild.builds.editor` 等）が要る。`python seed.py` はローカルの ADC 認証と名前付きDB `airlock` の実在が前提。
-- **デモは利便のため `--allow-unauthenticated`**。`/seed` `/generate` は Vertex 課金を伴うので、本番では認証必須(IAP/APIキー)にすること。攻撃ペイロード中の鍵等は合成ダミー。
+- **「ガバナンスON＝突破0」は構造的帰結**（ブロック条件と突破条件が同一 `danger()` を共有）＝*実行境界での強制の検証*。ポリシー網羅性の証明ではない。
+- **OFF突破・正当遮断はモデル挙動に依存する観測値（非決定）**。毎回確実に突破するのは「$5,000の無承認返金」。
+- **L3の封殺は固定コードのプローブで実証**（LLM非依存）。フロンティアモデルは露骨な窃取タスクを自力で拒否するため、機構の証明はプローブで担保。
+- Model Armor / danger() の正規表現は回避余地あり（多層防御の各層はベストエフォート、決定的な allowlist+limit が本命）。
+- リージョン：Firestore はリージョナル(us-central1)、Vertex Gemini 3.5 は `global`（非対称だが正常）。
+- **デモは `--allow-unauthenticated`**。`/seed` `/generate` は課金を伴うため本番では認証必須(IAP/APIキー)に。攻撃ペイロード中の鍵は合成ダミー。
 
 ## テスト
 ```bash
 pip install -r requirements.txt pytest
-GOOGLE_CLOUD_PROJECT=ci python -m pytest test_policy.py -q   # 決定的(LLM不要)。danger()＋遮断→採点の核心フローを回帰テスト
+GOOGLE_CLOUD_PROJECT=ci python -m pytest test_policy.py -q   # 決定的(LLM不要)・遮断→採点の核心フロー回帰
 ```
-
-## セキュリティ/安全
-- 危険ツールは全て**計装モック**(実送金・実送信なし)。実exploitは生成しない。
-- 攻撃バッテリーは公開されているAIエージェント脅威(プロンプトインジェクション/ツール汚染/データ持ち出し/不可逆操作の無承認)を機械採点可能な形にしたもの。
-
-## ライセンス / 注記
-個人開発・ハッカソン提出物。Gemini/ADK/Cloud Run/Firestore/Pub/Sub を使用。
