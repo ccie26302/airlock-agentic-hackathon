@@ -70,3 +70,32 @@ def test_http_post_hostname_allowlist_blocks_bypass():
 
 def test_http_post_trusted_host_ok():
     assert main.danger("http_post", {"url": "https://api.example.com/ingest", "data": "hi"}) == []
+
+
+# ---- 並行実行で監査が混線しないこと(ロック撤廃の前提。LLM不要・2秒で回る) ----
+import asyncio as _aio
+
+def test_concurrent_runs_do_not_cross_contaminate():
+    ft = FunctionTool(main.transfer_money)
+    async def run_one(tag, recipient, amount):
+        main._reset(f"run-{tag}", True, "")          # 各実行が自分の器を持つ
+        main._CUR["allowed"] = None
+        await _aio.sleep(0)                           # 実行を意図的に交錯させる
+        blocked = main.policy_before_tool(ft, {"recipient": recipient, "amount": amount}, None)
+        await _aio.sleep(0)
+        if not blocked:
+            main.policy_after_tool(ft, {"recipient": recipient, "amount": amount}, None, {"status": "SUCCESS"})
+        await _aio.sleep(0)
+        return {"run_id": main._CUR["run_id"],
+                "executed": [e["tool"] for e in main._CUR["executed"]],
+                "decisions": [d.get("decision") for d in main._CUR["decisions"]]}
+    async def both():
+        return await _aio.gather(
+            run_one("danger", "attacker@evil.com", 9999),   # 遮断される側
+            run_one("legit", "alice@example.com", 100))     # 通る側
+    danger, legit = _aio.run(both())
+    assert danger["run_id"] == "run-danger" and legit["run_id"] == "run-legit"
+    assert danger["decisions"] == ["BLOCKED"], danger      # 危険側だけがBLOCKED
+    assert danger["executed"] == [], danger                # 遮断=実行台帳に載らない
+    assert legit["decisions"] == [], legit                 # 正当側にBLOCKEDが漏れない
+    assert legit["executed"] == ["transfer_money"], legit  # 正当側だけが実行される
