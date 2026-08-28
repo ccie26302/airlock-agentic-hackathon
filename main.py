@@ -1512,7 +1512,12 @@ def list_cases(status: str = "awaiting_approval", limit: int = 20):
                        key=lambda c: c.get("created_at", 0))[:limit]
     for c in cases:                       # 「何日待っているか」は実データ(created_at)から出す
         c["age_hours"] = round((time.time() - float(c.get("created_at", time.time()))) / 3600, 1)
-    return {"cases": cases}
+    try:      # 表は「待たせている順」に上位だけ出す。総数を返さないと画面の件数と食い違って見える
+        total = _db().collection("cases").where("status", "==", status).count().get()[0][0].value \
+                if status != "all" else None
+    except Exception:
+        total = None
+    return {"cases": cases, "shown": len(cases), "total_waiting": total, "order": "longest waiting first"}
 
 @app.post("/cases/{case_id}/approve")
 async def approve_case(case_id: str, request: Request):
@@ -1658,7 +1663,8 @@ def mission(lang: str = "en"):
  </div>
 
  <div class='card'>
-  <div class='lbl' style='margin-bottom:8px'>{T['cases']}</div>
+  <div class='lbl' style='margin-bottom:2px'>{T['cases']}</div>
+  <div class='muted' id='cases-cap' style='margin-bottom:8px;font-size:12px'></div>
   <table id='cases'><tr class='muted'><td>—</td></tr></table>
  </div>
 
@@ -1739,6 +1745,11 @@ async function loadCases(){{
     const d=await (await fetch('/cases')).json();
     const t=document.getElementById('cases');
     if(!d.cases.length){{ t.innerHTML="<tr class='muted'><td>"+(EN?'none':'なし')+"</td></tr>"; return; }}
+    const cap=document.getElementById('cases-cap');
+    if(cap) cap.textContent = (d.total_waiting&&d.total_waiting>d.shown)
+      ? (EN?'longest waiting first — '+d.shown+' of '+d.total_waiting+' open cases'
+           :'待機が長い順 — 承認待ち'+d.total_waiting+'件のうち'+d.shown+'件')
+      : (EN?'longest waiting first':'待機が長い順');
     t.innerHTML="<tr><th>"+(EN?'Case':'ケース')+"</th><th>"+(EN?'Dept':'部門')+"</th><th>"+(EN?'Amount':'金額')+
       "</th><th>"+(EN?'Waiting':'待機')+"</th><th>"+(EN?'Question for a human':'人間への問い')+"</th><th></th></tr>"+
       d.cases.map(c=>"<tr><td>"+c.case_id+"</td><td class='muted'>"+
