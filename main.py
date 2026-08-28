@@ -1,7 +1,12 @@
 """Airlock service (Day2): ADKエージェント + 実行時ガバナンス(Policy Engine) + 攻撃バッテリー
 + 決定的判定の通信簿(scorecard) + Firestore監査 + Pub/Sub。
 判定はGeminiでなく「危険ツールが実際に実行されたか(計装)」で決める=数字が安定する。"""
-import os, json, uuid, time, re, asyncio, contextvars
+import os, json, uuid, time, re, asyncio, contextvars, warnings
+
+# ADK が LLM 呼び出しのたびに出す実験的機能の通知を落とす。1件あたり2行×200件で
+# 運用ログが判断で埋まらなくなるため(機能自体は有効のまま、通知だけを止める)。
+warnings.filterwarnings("ignore", message=r".*JSON_SCHEMA_FOR_FUNC_DECL.*")
+warnings.filterwarnings("ignore", message=r".*\[EXPERIMENTAL\].*")
 from typing import List
 
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "TRUE")
