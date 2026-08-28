@@ -23,6 +23,41 @@ from google.genai import types
 PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "forward-vector-470012-n8")
 TOPIC = os.environ.get("AUDIT_TOPIC", "airlock-audit")
 MODEL = os.environ.get("AIRLOCK_MODEL", "gemini-3.5-flash")
+
+# ★Gemma を Cloud Run GPU(NVIDIA L4)上の Ollama で動かし、艦隊の1体として組み込む。
+#   狙いは「モデルを増やすこと」ではなく、強制がツール境界にあることの証明:
+#   同じツール・同じ before_tool_callback を、Gemini ではないモデルに付けても同じように止まる。
+# Gemma は2通りの載せ方を用意してある。生きているのは①。
+#  ① Vertex AI エンドポイント (L4)   … このプロジェクトはこちらにGPUクォータがある
+#  ② Cloud Run GPU + Ollama         … gemma/ にイメージと deploy.sh。GPUクォータが下りれば動く
+GEMMA_ENDPOINT = os.environ.get("GEMMA_ENDPOINT", "")   # Vertex endpoint id
+GEMMA_SERVED_MODEL = os.environ.get("GEMMA_SERVED_MODEL", "google/gemma-3-4b-it")
+GEMMA_LOCATION = os.environ.get("GEMMA_LOCATION", "us-central1")
+GEMMA_DOMAIN = os.environ.get("GEMMA_DOMAIN", "")       # dedicatedEndpointDns
+
+def _access_token() -> str:
+    """Vertex を叩くOAuthトークン。Cloud Run 上ではメタデータサーバから、
+    ローカルでは ADC から取る(両方で同じコードが動くようにしておく)。"""
+    import urllib.request, json as _j
+    try:
+        req = urllib.request.Request(
+            "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
+            headers={"Metadata-Flavor": "Google"})
+        return _j.loads(urllib.request.urlopen(req, timeout=5).read())["access_token"]
+    except Exception:
+        import subprocess
+        return subprocess.run(["gcloud", "auth", "print-access-token"],
+                              capture_output=True, text=True, timeout=30).stdout.strip()
+
+def _gemma_model():
+    """vLLM が出す OpenAI互換エンドポイントを LiteLLM 経由で叩く。
+    ADK から見れば普通のモデルなので、ツールもコールバックもそのまま付く。"""
+    from google.adk.models.lite_llm import LiteLlm
+    # ★専用エンドポイントは共有ドメイン(aiplatform.googleapis.com)からは叩けない。
+    #   dedicatedEndpointDns の値でなければ 400 になる(エラーメッセージが返す名前は誤りだった)。
+    base = (f"https://{GEMMA_DOMAIN}/v1beta1/projects/{PROJECT}"
+            f"/locations/{GEMMA_LOCATION}/endpoints/{GEMMA_ENDPOINT}")
+    return LiteLlm(model=f"openai/{GEMMA_SERVED_MODEL}", api_base=base, api_key=_access_token())
 AIRLOCK_TOKEN = os.environ.get("AIRLOCK_TOKEN", "")   # 副作用・課金系エンドポイントの保護
 LIMIT = 1000.0
 
@@ -431,6 +466,11 @@ COMPLAINT_INSTRUCTION = (
 
 def make_agent(name="refund_agent", allowed=None, role=None, guardrails=None):
     tools = ALL_TOOLS if allowed is None else [t for t in ALL_TOOLS if t.__name__ in allowed]
+    if name == "gemma_intake_agent":
+        # ticket_agent と同じ素朴な指示・同じツール・同じコールバック。違いはモデルだけ。
+        return LlmAgent(name=name, model=_gemma_model(), instruction=TICKET_INSTRUCTION,
+                        tools=[t for t in ALL_TOOLS if t.__name__ in (allowed or [])],
+                        before_tool_callback=policy_before_tool, after_tool_callback=policy_after_tool)
     if name == "ticket_agent":
         return LlmAgent(name=name, model=MODEL, instruction=TICKET_INSTRUCTION,
                         tools=[t for t in ALL_TOOLS if t.__name__ in (allowed or [])],
@@ -469,6 +509,10 @@ AGENT_REGISTRY = [
      "allowed": ["read_order_note", "send_email"]},
     {"name": "analytics_agent", "desc": "利用分析(顧客データ読取・コード実行)", "art": "SOP: 分析レポート",
      "allowed": ["get_customer_list", "http_post", "run_analysis"]},
+    # ★Gemini ではないモデル。指示もツールもコールバックも ticket_agent と同一で、違いはモデルだけ。
+    #   強制がツール境界にあるなら、モデルを替えても同じように止まるはず — それを測るために置く。
+    {"name": "gemma_intake_agent", "desc": "受付トリアージ(Gemma 3 on Cloud Run GPU)",
+     "art": "SOP: チケット処理", "allowed": ["transfer_money", "send_email"]},
 ]
 # 部門カタログ。エージェント一覧ではなく「誰が何をやれて、やれない時どこへ渡すか」を持つ。
 # support は送金ツールを持たない(構成ではなく権限の事実) → 金銭救済は Finance に引き継ぐ。
@@ -477,13 +521,22 @@ DEPARTMENTS = {
     "Claims":       {"agent": "ticket_agent",    "hands_off_to": None},
     "Support":      {"agent": "support_agent",   "hands_off_to": "Finance"},
     "Finance":      {"agent": "refund_agent",    "hands_off_to": None},
+    "Intake":       {"agent": "gemma_intake_agent", "hands_off_to": None},
 }
 def _dept_agent(dept: str) -> str:
     return (DEPARTMENTS.get(dept) or {}).get("agent") or "complaint_agent"
+def _agent_model_label(name: str) -> str:
+    return f"Gemma 3 · Cloud Run GPU" if name == "gemma_intake_agent" else MODEL
+
 def _agent_allowed(name: str):
     return next((a["allowed"] for a in AGENT_REGISTRY if a["name"] == name), None)
 
-_AGENTS = {a["name"]: make_agent(a["name"], a["allowed"]) for a in AGENT_REGISTRY}
+def _buildable(name: str) -> bool:
+    # Gemma は専用サービスが要る。未設定の環境(テスト/ローカル)では艦隊に載せない。
+    return bool(GEMMA_ENDPOINT) if name == "gemma_intake_agent" else True
+
+_AGENTS = {a["name"]: make_agent(a["name"], a["allowed"])
+           for a in AGENT_REGISTRY if _buildable(a["name"])}
 AGENT = _AGENTS["refund_agent"]
 
 
@@ -1113,12 +1166,16 @@ def _agent_ui_data(en: bool):
 #     指紋が変わり、過去の合格は無効になり、再検証まで本番キューから締め出される(fail-closed)。
 
 def _agent_fingerprint(name: str) -> str:
-    """指示文＋許可ツールから指紋を取る。エージェントが変わればここが変わる。"""
+    """指示文＋許可ツール＋モデルから指紋を取る。エージェントが変わればここが変わる。
+    ★モデルを入れていなかった: 指示とツールが同じなら Gemini から Gemma に差し替えても
+      過去の合格が有効なままになっていた。モデルの差し替えは最も再検証が要る変更なので、
+      指紋に含める(Gemma を艦隊に足して初めて露見した)。"""
     import hashlib
     ag = _AGENTS.get(name)
     instr = getattr(ag, "instruction", "") if ag else ""
     allowed = sorted(next((a["allowed"] for a in AGENT_REGISTRY if a["name"] == name), []) or [])
-    return hashlib.sha256((str(instr) + "|" + ",".join(allowed)).encode()).hexdigest()[:16]
+    model = _agent_model_label(name)
+    return hashlib.sha256((str(instr) + "|" + ",".join(allowed) + "|" + model).encode()).hexdigest()[:16]
 
 def _ci_status(name: str) -> dict:
     """現在の指紋に対する検証結果。指紋が違えば "stale"(=未検証扱い)。"""
@@ -1572,7 +1629,8 @@ def fleet(lang: str = "en"):
         ho = cfg.get("hands_off_to")
         hocell = (f"<b style='color:#38bdf8'>{ho}</b><div class='muted'>{DEPARTMENTS[ho]['agent']} executes it "
                   f"with its own permissions and its own CI pass</div>") if ho else "<span class='muted'>—</span>"
-        rows += (f"<tr><td><b>{dept}</b></td><td><code>{name}</code></td>"
+        rows += (f"<tr><td><b>{dept}</b></td>"
+                 f"<td><code>{name}</code><div class='muted'>{_agent_model_label(name)}</div></td>"
                  f"<td>{' '.join(f'<span class=ok>{t}</span>' for t in allowed) or '—'}</td>"
                  f"<td>{' '.join(f'<span class=no>{t}</span>' for t in cannot) or '—'}</td>"
                  f"<td>{hocell}</td>"

@@ -95,6 +95,20 @@ scale; Firestore holds state, cases and the audit trail; Model Armor screens lan
   email was stopped, it claimed the platform had prevented the payment. It now reports what was
   stopped and what had already run — and hands the half-finished item to a person.
 
+## A second model, and the bug it exposed
+Enforcement sits in the tool callback, below the model — so it should hold for a model that is not
+Gemini. The fleet now includes `gemma_intake_agent`: **Gemma 3 (4B) on an NVIDIA L4**, with the same
+instruction, tools and callbacks as an existing agent. Only the model differs.
+
+It failed the CI gate — one false positive, and zero unsafe actions reached even with governance off,
+so its clean sheet proves the model's limits rather than the platform's. Work sent to it was refused:
+5 items in, 5 quarantined, 0 processed.
+
+Adding it also exposed a real hole: CI passes were fingerprinted over instruction and tools but **not
+the model**, so swapping Gemini for Gemma would have kept the old pass valid. Changing the model is
+the change most in need of re-verification. It is in the fingerprint now, and every agent went stale
+and had to re-prove itself.
+
 ## The metric that was wrong
 "Closed with non-monetary relief" contains "monetary relief" as a substring. My first accuracy number
 counted 63 non-monetary dispositions as monetary and looked far better than the truth. I found it by

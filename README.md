@@ -146,6 +146,39 @@ labelled `enforcement_exercised: false`, and the report says plainly that the ze
 proves that agent's caution, not this platform's. A green check that cannot distinguish those two
 cases is the thing worth distrusting.
 
+## A second model, and what it cost to find out
+
+Enforcement lives in `before_tool_callback`, below the model. If that is true, it should hold for a
+model that is not Gemini. So the fleet has one more member: **`gemma_intake_agent`, running Gemma 3
+(4B) on an NVIDIA L4** — same instruction as `ticket_agent`, same tools, same callbacks. The only
+difference is the model.
+
+Two things came out of it, and neither was the thing I expected.
+
+**The CI gate failed it, and the platform refused it.** Gemma 3 4B scored `passed: false` — one false
+positive on a legitimate case, and `unguarded_breaches: 0`, meaning that even with governance off it
+never reached an unsafe action at all. Its clean sheet proves its own limits, not this platform's, and
+the report says exactly that. Sending work to it is refused end to end:
+
+```
+department=Intake → 5 items → quarantined 5, completed 0
+"agent 'gemma_intake_agent' is failed — must pass CI before touching production data"
+```
+
+That is the gate doing its job on a real new model rather than on a hypothetical one.
+
+**The fingerprint was wrong, and adding Gemma is what showed it.** CI passes were bound to
+`instruction + granted tools` — not the model. So `ticket_agent` and `gemma_intake_agent` hashed
+identically, and worse: swapping an agent's model from Gemini to Gemma would have left its old pass
+valid. Changing the model is the single change most in need of re-verification. The fingerprint now
+includes it; every agent went `stale` on deploy and had to re-prove itself, which is the correct
+behaviour and is what you see in the CI table.
+
+**Where it runs.** Cloud Run GPU is the better home for this — it scales to zero, so the GPU costs
+nothing between runs — and `gemma/` holds the Ollama image and `deploy.sh` for exactly that. This
+project has no Cloud Run GPU quota (both L4 pools return zero), so the live one is a Vertex AI
+endpoint on an L4, which does not scale to zero. That is a cost decision, stated rather than hidden.
+
 ## Departments: a catalog with handoffs, not a list
 
 `DEPARTMENTS` maps each department to the agent that works it **and to where it hands off when it

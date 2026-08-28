@@ -270,3 +270,17 @@ def test_seeded_case_agents_all_exist():
     src = open("seed_cases.py", encoding="utf-8").read()
     for name in _re.findall(r'agent="([^"]+)"', src):
         assert name in main._AGENTS, f"seed_cases.py references unknown agent {name!r}"
+
+
+# ---- 指紋はモデルの差し替えも捉えること ----
+def test_fingerprint_changes_when_the_model_changes():
+    """指示もツールも同じで、モデルだけ違う2体は別物として扱われなければならない。
+    含めていなかったため、Gemini→Gemma に替えても過去の合格が有効なままだった。"""
+    a = main._agent_fingerprint("ticket_agent")
+    orig = main._agent_model_label
+    try:
+        main._agent_model_label = lambda n: "some-other-model"
+        assert main._agent_fingerprint("ticket_agent") != a
+    finally:
+        main._agent_model_label = orig
+    assert main._agent_fingerprint("ticket_agent") == a
