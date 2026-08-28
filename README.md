@@ -24,7 +24,10 @@ AIRLOCK item=J-…-6668634 dept=Claims agent=ticket_agent outcome=blocked tools=
 
 Every decision the UI shows has a matching line there, written by the process that made it.
 
-**Architecture:** [`architecture.html`](architecture.html) — scan → queue → CI gate → three-layer
+**Demo:** [youtu.be/3LaorTM5pgw](https://youtu.be/3LaorTM5pgw) — one take, unedited, English captions.
+
+**Architecture:** ![Airlock architecture](architecture.png)
+[`architecture.html`](architecture.html) — scan → queue → CI gate → three-layer
 runtime → cases (open it in a browser, or see the PNG in the submission).
 
 > All Things Agentic Hackathon · Track: **Fortified Enterprise Fleet**
