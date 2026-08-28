@@ -1,6 +1,9 @@
 # Airlock — Devpost submission text
 Track: **Fortified Enterprise Fleet** · *Individual project. Not affiliated with or endorsed by Google.*
 
+**Repository:** https://github.com/ccie26302/airlock-agentic-hackathon
+**Live:** https://airlock-52kgcfrghq-uc.a.run.app/mission?lang=en
+
 ---
 
 ## Elevator pitch
