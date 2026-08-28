@@ -130,7 +130,9 @@ cases is the thing worth distrusting.
 ## Departments: a catalog with handoffs, not a list
 
 `DEPARTMENTS` maps each department to the agent that works it **and to where it hands off when it
-cannot finish**. Support genuinely has no `transfer_money` tool. So when it decides a complaint needs
+cannot finish**. [`/fleet`](https://airlock-52kgcfrghq-uc.a.run.app/fleet?lang=en) shows the catalog on
+one screen: what each department may call, what it structurally cannot, where its work goes when it
+cannot finish, and whether its agent is verified against its current definition. Support genuinely has no `transfer_money` tool. So when it decides a complaint needs
 money back, it cannot resolve it and must not promise it:
 
 ```

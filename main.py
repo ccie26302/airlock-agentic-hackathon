@@ -1491,11 +1491,89 @@ def firestore_inc(n):
 
 # ================= ケース: 保留 → 人間の承認 → 文脈を読み戻して再開 =================
 @app.get("/jobs/{job_id}/items")
-def job_items(job_id: str, limit: int = 60):
+def job_items(job_id: str, limit: int = 60, status: str = ""):
     docs = _db().collection("items").where("job_id", "==", job_id).limit(400).stream()
     items = [d.to_dict() for d in docs]
+    if status:                    # 遮断だけを引ける。直近60件の窓から溢れても山場を取り落とさない
+        items = [i for i in items if i.get("status") == status]
     items.sort(key=lambda x: x.get("finished_at", 0), reverse=True)
     return {"items": items[:limit]}
+
+@app.get("/fleet", response_class=HTMLResponse)
+def fleet(lang: str = "en"):
+    """部門カタログ: 誰が何をやれて、やれない時どこへ渡し、その資格は今も有効か。
+    トラック要件①(cross-department で使えるカタログ)の実物。JSONは /console_agents と /ci。"""
+    en = lang != "ja"
+    T = {"title": "Department catalog" if en else "部門カタログ",
+         "sub": ("Who may act, what they may not touch, and where the work goes when they cannot finish it"
+                 if en else "誰が実行でき、何に触れられず、実行できない時どこへ渡すか"),
+         "dept": "Department" if en else "部門", "agent": "Agent" if en else "エージェント",
+         "can": "May call" if en else "実行できる", "cannot": "Structurally cannot" if en else "構造的に不可能",
+         "ho": "Hands off to" if en else "引き継ぎ先", "ci": "Verified now" if en else "現在の検証状態",
+         "note": ("A department cannot acquire a tool at runtime: the agent is constructed with its tool "
+                  "list, so \"cannot\" is a property of the process, not a policy string."
+                  if en else "部門は実行時にツールを獲得できない。エージェントはツール一覧を与えて生成されるため、"
+                            "「不可能」はポリシー文字列ではなくプロセスの性質。"),
+         "cov": ("CI runs the battery twice — once with governance off — so a pass reports how many unsafe "
+                 "actions this agent reached when nothing stopped it. Reaching zero means the pass proves "
+                 "the agent's caution, not this platform's."
+                 if en else "CIはガバナンスOFFでも同じ試験を走らせ、無防備なら何件の危険操作に到達したかを合格に添える。"
+                           "0なら、その合格はエージェントの慎重さを証明しただけで基盤を証明していない。")}
+    rows = ""
+    for dept, cfg in DEPARTMENTS.items():
+        name = cfg["agent"]
+        allowed = _agent_allowed(name) or []
+        cannot = [t for t in ("transfer_money", "send_email", "http_post", "run_analysis",
+                              "get_customer_list", "write_memory", "read_order_note") if t not in allowed]
+        ci = _ci_status(name)
+        state = ci.get("state", "unknown")
+        colour = {"passed": "#22c55e", "stale": "#f59e0b"}.get(state, "#ef4444")
+        ub, ex = ci.get("unguarded_breaches"), ci.get("enforcement_exercised")
+        cov = ("" if ub is None else
+               (f"<div class='muted'>reached {ub} unsafe action(s) unguarded — enforcement exercised</div>"
+                if ex else "<div style='color:#f59e0b;font-size:12px'>reached 0 unguarded — "
+                           "this pass proves the agent's caution, not the platform's</div>"))
+        ho = cfg.get("hands_off_to")
+        hocell = (f"<b style='color:#38bdf8'>{ho}</b><div class='muted'>{DEPARTMENTS[ho]['agent']} executes it "
+                  f"with its own permissions and its own CI pass</div>") if ho else "<span class='muted'>—</span>"
+        rows += (f"<tr><td><b>{dept}</b></td><td><code>{name}</code></td>"
+                 f"<td>{' '.join(f'<span class=ok>{t}</span>' for t in allowed) or '—'}</td>"
+                 f"<td>{' '.join(f'<span class=no>{t}</span>' for t in cannot) or '—'}</td>"
+                 f"<td>{hocell}</td>"
+                 f"<td><b style='color:{colour}'>{state}</b>{cov}</td></tr>")
+    return HTMLResponse(f"""<!doctype html><html><head><meta charset='utf-8'><title>Airlock — {T['title']}</title>
+<style>
+ body{{margin:0;background:#020617;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;padding:22px}}
+ .card{{background:#0f172a;border:1px solid #1e293b;border-radius:14px;padding:16px;margin-top:14px}}
+ .muted{{color:#64748b;font-size:12.5px}}
+ table{{width:100%;border-collapse:collapse;font-size:13.5px}}
+ th{{text-align:left;color:#94a3b8;font-weight:600;padding:8px 10px;border-bottom:1px solid #1e293b}}
+ td{{padding:11px 10px;border-bottom:1px solid #111c30;vertical-align:top}}
+ code{{color:#38bdf8}}
+ .ok{{display:inline-block;background:#052e1a;color:#4ade80;border:1px solid #14532d;border-radius:5px;
+      padding:2px 6px;margin:1px;font-size:11.5px;font-family:ui-monospace,monospace}}
+ .no{{display:inline-block;background:#2a0d12;color:#fca5a5;border:1px solid #4c1d24;border-radius:5px;
+      padding:2px 6px;margin:1px;font-size:11.5px;font-family:ui-monospace,monospace;
+      text-decoration:line-through}}
+ a{{color:#38bdf8}}
+</style></head><body>
+ <div style='display:flex;justify-content:space-between;align-items:baseline'>
+  <div><span style='font-size:22px;font-weight:800'>🛰 Airlock</span>
+   <span class='muted' style='margin-left:10px'>{T['title']} — {T['sub']}</span></div>
+  <div class='muted'><a href='/mission?lang={lang}'>Mission</a> · <a href='/dashboard?lang={lang}'>Governance</a>
+   · <a href='/fleet?lang={"ja" if en else "en"}'>{"日本語" if en else "English"}</a></div>
+ </div>
+ <div class='card'>
+  <table><tr><th>{T['dept']}</th><th>{T['agent']}</th><th>{T['can']}</th><th>{T['cannot']}</th>
+   <th>{T['ho']}</th><th>{T['ci']}</th></tr>{rows}</table>
+ </div>
+ <div class='card'>
+  <div class='muted'>{T['note']}</div>
+  <div class='muted' style='margin-top:8px'>{T['cov']}</div>
+  <div class='muted' style='margin-top:8px'>JSON: <a href='/console_agents?lang={lang}'>/console_agents</a>
+   · <a href='/ci'>/ci</a></div>
+ </div>
+</body></html>""")
 
 @app.get("/cases")
 def list_cases(status: str = "awaiting_approval", limit: int = 20):
@@ -1620,6 +1698,7 @@ def mission(lang: str = "en"):
   <div><span style='font-size:23px;font-weight:800'>🛰 Airlock</span>
    <span class='muted' style='margin-left:10px'>{T['sub']}</span></div>
   <div class='muted'><a href='/console?lang={"en" if en else "ja"}' style='color:#38bdf8'>Console</a>
+   · <a href='/fleet?lang={"en" if en else "ja"}' style='color:#38bdf8'>Fleet</a>
    · <a href='/dashboard?lang={"en" if en else "ja"}' style='color:#38bdf8'>Governance</a>
    · <a href='/mission?lang={"ja" if en else "en"}' style='color:#38bdf8'>{"日本語" if en else "English"}</a></div>
  </div>
@@ -1672,7 +1751,21 @@ def mission(lang: str = "en"):
 <script>
 const EN={"true" if en else "false"}, APPROVE="{T['approve']}";
 let job=null, t0=null, seen=new Set(), timer=null, blockedShown=new Set();
+// 実行中/完了したジョブをURLで開き直せる。ページを再読込しても実行が追える(状態はFirestore側)。
+async function attach(jid){{
+  const r=await fetch('/jobs/'+jid); if(!r.ok) return;
+  const d=await r.json();
+  job=jid; t0=(d.created_at? d.created_at*1000 : Date.now()); seen=new Set(); blockedShown=new Set();
+  document.getElementById('backlog').textContent=d.total||0;
+  document.getElementById('scanline').textContent=(EN?'scanned ':'走査 ')+(d.scanned_rows||0).toLocaleString()+
+    (EN?' real CFPB complaints · ':' 件の実CFPB苦情 · ')+Math.round((d.scanned_bytes||0)/1e6)+' MB';
+  document.getElementById('job').textContent=jid;
+  document.getElementById('go').disabled=true;
+  if(timer) clearInterval(timer);
+  timer=setInterval(poll,1500); poll();
+}}
 function hdrs(){{const h={{'Content-Type':'application/json'}};const t=document.getElementById('tok').value.trim();if(t)h['X-Airlock-Token']=t;return h;}}
+(function(){{ const j=new URLSearchParams(location.search).get('job'); if(j) attach(j); }})();
 async function start(){{
   const b=document.getElementById('go'); b.disabled=true;
   document.getElementById('job').textContent=EN?'scanning 3.4M rows…':'340万行を走査中…';
@@ -1729,13 +1822,15 @@ async function poll(){{
     el('c-blocked',j.blocked||0); el('c-failed',j.failed||0);
     el('backlog', Math.max((j.total||0)-done,0));
     document.getElementById('fill').style.width=(100*done/Math.max(j.total||1,1))+'%';
-    const sec=(Date.now()-t0)/1000;
+    const sec=(j.finished_at? (j.finished_at-j.created_at) : (Date.now()-t0)/1000);
     el('clock', (EN?'elapsed ':'経過 ')+sec.toFixed(0)+'s');
     el('rate', sec>2?(done/sec*60).toFixed(0):'—');
     const all=(await (await fetch('/jobs/'+job+'/items?limit=60')).json()).items||[];
     const its=all.filter(it=>it.finished_at&&it.status&&it.status!=='running');  // 完了した判断だけを流す
-    its.slice().reverse().forEach(it=>{{ if(!seen.has(it.item_id)){{ seen.add(it.item_id); line(it);
-      if(it.status==='blocked') alertBlocked(it); }} }});
+    its.slice().reverse().forEach(it=>{{ if(!seen.has(it.item_id)){{ seen.add(it.item_id); line(it); }} }});
+    // 遮断は別に引く: 判断ストリームの窓から溢れても、止めた事実は必ず画面に出す
+    const blk=(await (await fetch('/jobs/'+job+'/items?status=blocked&limit=20')).json()).items||[];
+    blk.slice().reverse().forEach(alertBlocked);
     if(done>=(j.total||0)&&done>0){{ clearInterval(timer); document.getElementById('go').disabled=false;
       document.getElementById('job').textContent='job '+job+' — '+(EN?'finished in ':'完走 ')+sec.toFixed(0)+'s'; }}
   }}catch(e){{}}

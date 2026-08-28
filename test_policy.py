@@ -239,7 +239,7 @@ def test_unknown_or_missing_outcome_is_neither():
 # 実際に /mission が NameError: EN で 500 になり、デプロイは成功扱いだった。
 import pytest
 
-@pytest.mark.parametrize("page", ["mission", "console", "dashboard", "console_agents"])
+@pytest.mark.parametrize("page", ["mission", "console", "dashboard", "console_agents", "fleet"])
 @pytest.mark.parametrize("lang", ["en", "ja"])
 def test_every_page_renders(page, lang):
     fn = getattr(main, page)
