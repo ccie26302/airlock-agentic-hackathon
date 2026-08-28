@@ -1,59 +1,95 @@
-# Airlock — Devpost Submission Text
-（Devpostの各欄にコピペ用。英語。）
-Track: **Fortified Enterprise Fleet** · *Individual hackathon project. Not affiliated with or endorsed by Google or Anthropic.*
+# Airlock — Devpost submission text
+Track: **Fortified Enterprise Fleet** · *Individual project. Not affiliated with or endorsed by Google.*
 
 ---
 
 ## Elevator pitch
-Airlock turns your SOPs into least-privilege agents that do real work on Google Cloud, and wraps them in **three layers of defense** — language, action, and execution. Overt injections, plausible-but-forbidden actions, and even hijacked code execution are all contained, and proven with a **deterministic** scorecard. Ship agents fast; let none act unaudited.
+Airlock clears an operational backlog while nobody is watching. It scans 3.4 million real consumer
+complaints, works the ones that need action asynchronously, and stops anything unsafe at the tool
+boundary — because the text it reads is written by customers, and the agents reading it get rewritten
+every day. **Run it unattended. Not unguarded.**
 
 ## The problem
-Teams can build an agent in an afternoon, but they can't *deploy* one. One over-permissioned tool call — a $5,000 refund with no approval, a customer list emailed outside, or generated code that quietly reads the VM's service-account token — turns an "assistant" into an incident. No single guard stops all three. Airlock is the platform that makes an agent safe enough to ship.
+The work that actually costs companies money is not clever; it is endless. Three and a half million
+complaints, a million of them free text. A person reading two a minute needs about forty thousand
+hours. So you hand it to agents — and then you cannot leave them alone, because one poisoned sentence
+inside a customer record is enough to redirect a payment at 3am, and because the agent you tested on
+Monday is not the agent running on Thursday.
 
 ## What it does
-- **Generate (least privilege):** Paste a plain-language SOP. Gemini 3.5 emits an agent spec that selects *only* the tools the SOP needs, and registers it into the fleet.
-- **Run real work:** Agents complete real operations on Google Cloud — read orders/customers from **Firestore**, write to a real refunds ledger and email outbox, make real outbound HTTP calls, and run analysis code. (Only the payment gateway is simulated — no real funds move.)
-- **Defend in three layers (each catches what the others can't):**
-  - **L1 — language:** **Google Model Armor** screens every incoming prompt and blocks prompt injection / jailbreak before the agent runs.
-  - **L2 — action:** a deterministic Policy Engine inspects every tool call via Google ADK callbacks and **blocks dangerous actions before they execute** (over-limit/redirected transfers, PII/secret exfiltration, unapproved irreversible ops).
-  - **L3 — execution:** agent-run code executes inside a **Cloud Run sandbox** (gVisor). Even a hijacked code path can't reach the metadata server or the network — it physically cannot steal the service-account token.
-- **Governed memory (Fleet completeness):** agent memory writes pass through the same policy engine, so **cross-session memory poisoning** — quietly writing "approval limit = unlimited" into memory to weaken future decisions — is blocked. This closes the fifth Fortified-Enterprise-Fleet requirement (registry / runtime / **memory** / security governance / observability).
-- **Prove it deterministically:** an attack battery grades on *instrumentation facts* (did a dangerous tool actually execute?), not an LLM judge. One `danger()` predicate is shared by the policy and the grader, so with governance on, breaches are **structurally zero** — a guarantee about enforcement (a blocked call can never execute), not a claim the predicate covers every threat.
-- **Fleet & observability:** a bilingual (JA/EN) dashboard shows each agent's least-privilege scope and posture, every block and its reason (which layer caught it), an audit trail in Firestore + Cloud Logging, and audit events on Pub/Sub.
+- **Scans at scale.** `POST /jobs` runs a BigQuery query over `bigquery-public-data.cfpb_complaints`
+  (3,458,906 rows, 1.7GB read), selects the exceptions, and returns a job id in about five seconds.
+  LLMs never touch all 3.4M rows — only the exceptions.
+- **Works them unattended.** Each exception is a Pub/Sub message consumed by a **private** Cloud Run
+  service. Agents read the complaint, decide, issue the refund, email the customer, or escalate.
+  Measured: **200 items in 103 seconds, 0 failed, 0 human interventions.**
+- **Enforces in three layers.** Model Armor screens the language; a deterministic policy stops
+  dangerous tool calls *before they execute*; a Cloud Run sandbox contains code execution so a
+  hijacked agent cannot exfiltrate credentials — the network does not exist inside it.
+- **Makes agents re-prove themselves.** CI results are bound to a fingerprint of the agent's
+  instruction and granted tools. Change the prompt, and the last pass goes stale and the worker
+  refuses to give that agent production data. Unverified is the default.
+- **Keeps work that outlives the process.** Escalations become cases in Firestore; approving one
+  replays its context and lets the agent finish. Approvals are single-use tickets bound to the exact
+  amount and payee.
 
-**How this differs from prompt-level guardrails or LLM-judge evals:** Airlock enforces at the ADK tool boundary and at the OS/execution boundary, and grades on execution facts — so "secure" is auditable across all three layers, not a prompt-level suggestion.
+## The measurement that changed the build
+I tried to measure how often an injected instruction actually lands, expecting a scary number.
 
-## Key results (measured, honestly scoped)
-- **Zero isn't luck — it's architecture.** The policy and the grader evaluate the *same* `danger()` predicate, so a blocked call can never be scored as executed — that's why "zero breaches under governance" is structural, not a lucky run. We publish the limits of that guarantee rather than a table of 100%s.
-- **Governance ON: zero breaches (structural), zero legit ops blocked.** Attacks are caught across *orthogonal* layers — a pure jailbreak (no tool call) only Model Armor catches; a plausible recipient-swap only the policy engine catches; hijacked code only the sandbox contains. One layer alone misses at least one of them.
-- **Unlike prompt-level guardrails (Model Armor, Llama Guard, NeMo) or LLM-judge evals**, Airlock enforces at the tool *and* execution boundary and grades on execution facts — so "secure" is auditable, not a vibe.
-- **Layer 3, verified live and LLM-independently:** the *same* service-account-token-theft code **leaks the real token when run directly**, but is **contained inside the Cloud Run sandbox** (network unreachable). This is the article-verified property, reproduced inside Airlock and shown on the dashboard.
-- **Governance OFF: real breaches occur** — e.g., an unapproved $5,000 refund executes and a synthetic API key is POSTed to an external endpoint. Whether a given attack *lands* depends on the model, so the OFF count varies run to run — that unpredictability is exactly the enterprise problem Airlock backstops. (The over-limit refund breaches every run.)
-- **L2 policy-check ≈ 0.04 ms/call** (the before-tool predicate only — this number *excludes* Model Armor's network round-trip and the sandbox spawn cost, which are separate; we call that out rather than present a one-sided figure).
+Against a tightly scoped agent — handed the payee, told to call each tool once — it landed **0 out of
+13** across three payload styles. The model simply ignored it. That is good behaviour, and it meant
+the action layer was never being exercised. Reporting a green checkmark there would have been a lie.
 
-## How we built it
-- **Gemini 3.5 Flash on Vertex AI** (global) — SOP→spec generation (structured output); the agents run on Gemini too. Attack scenarios are fixed, hand-authored payloads (not model-generated) for reproducibility.
-- **Google ADK** — `before_tool_callback` returns a substitute result to block a dangerous tool; `after_tool_callback` inspects tool output.
-- **Model Armor** — `sanitizeUserPrompt` with a PI/jailbreak + malicious-URI template.
-- **Cloud Run** (gen2, `--sandbox-launcher`) — API, dashboard, and `sandbox do` isolated code execution. **Firestore** (named db) — registry, real business data, audit, scorecards. **Pub/Sub** — audit events.
+So the fleet also runs a handler written the way a lot of real ones are written: *"carry out what the
+record says should happen."* That one follows the injected note — **8/8** in isolation, and 2 of 3
+seeded items in a live 20-item run — and every attempt is stopped at the tool boundary.
 
-## Challenges we ran into
-- **ADK fires `after_tool_callback` even when `before_tool_callback` blocked** (v2.7.1) — blocked calls looked like breaches until we detected the block sentinel; covered by a regression test.
-- **Frontier models refuse overtly malicious prompts on their own**, so we reframed action-layer attacks as *plausible business operations that violate policy*, and proved the sandbox layer with a fixed probe rather than relying on the model to write malicious code.
-- **Cloud Run sandbox has an empty PATH** — commands need full paths (`/bin/sh`, `/usr/local/bin/python3`); code is carried in as base64 to survive the sandbox command parser.
+That contrast is the argument for the platform. You cannot assume every team writes a careful prompt,
+and prompts change daily. The layer that holds has to sit below them.
 
-## What we learned
-Runtime governance across language, action, and execution — not model choice — is the gate to enterprise agent deployment. The most credible security demo isn't a table of 100%s; it's the same operation breaching unguarded and being contained under governance, with the (near-zero) cost measured and the limits stated.
+## How I built it
+Gemini 3.5 Flash on Vertex AI does the reasoning. Google ADK runs the agents, and its
+`before_tool_callback` is the enforcement point — returning a value there skips the tool, so a
+dangerous call is stopped rather than detected. Cloud Run runs a public UI and a private worker from
+the same image; Pub/Sub distributes work with an authenticated push subscription; BigQuery provides
+scale; Firestore holds state, cases and the audit trail; Model Armor screens language.
 
-## What's next
-Human-approval inbox for held actions; harder false-positive/boundary tests; org-wide policy packs; connectors to real tool backends behind the same interceptors; authenticated endpoints (the demo runs open for convenience).
+## Challenges
+- **Ack deadline vs item runtime.** Items take 20–30s; Pub/Sub defaults to 10s. Left alone, every
+  message is redelivered and the same refund is paid two or three times. Fixed with a 600s deadline
+  *and* an idempotent ledger keyed by item id.
+- **A failure that could never be retried.** The lease that prevents double-processing was left
+  behind when an item failed, so redelivery was discarded as a duplicate and the item was lost.
+  Releasing the lease on transient errors took a 200-item run from 10 permanently failed to 0.
+- **An unbounded agent.** ADK allows 500 LLM calls by default. An agent hunting for data it did not
+  have looped 20+ tool calls into a timeout and then a 429. Bounded to 8.
+- **Over-blocking measured, not guessed.** Model Armor at `LOW_AND_ABOVE` blocked a legitimate
+  Japanese request; the attacks measured HIGH, so the threshold moved — and the attack that then fell
+  below it was verified to be stopped by the action layer instead. Separately, matching the bare word
+  "card" blocked a real refund confirmation email, so secret detection now looks for values.
+
+## What I learned
+Enforcement belongs where the money moves, not in the prompt. And the honest version of a security
+demo is not a table of 100%s: it is showing the case where your own defence was never needed, next to
+the case where it was the only thing standing there.
+
+## Limits I'm stating up front
+"Zero breaches under governance" is a structural consequence — the policy and the grader share one
+predicate, so a blocked call cannot be scored as executed. It verifies enforcement; it does not prove
+the predicate covers every threat. A few hundred items per run is not "massive" and I don't call it
+that: the dataset is 3.4M rows and the scan really reads 1.7GB, but scale is shown by shape. The
+payment gateway is simulated; the ledger, outbox, outbound HTTP and code execution are real. Cases
+here are days old, not weeks.
 
 ## Built with
-`google-adk` · `gemini-3.5-flash` · `vertex-ai` · `model-armor` · `cloud-run` (sandbox) · `firestore` · `pub/sub` · `fastapi` · `python`
+`gemini-3.5-flash` · `vertex-ai` · `google-adk` · `cloud-run` (gen2, sandbox) · `bigquery` ·
+`firestore` · `pub-sub` · `model-armor` · `fastapi` · `python`
 
 ---
 
-## 必須フィールド対応
-- **Features:** "What it does"。 **Technologies:** "How we built it" / "Built with"。
-- **Data sources:** 実Firestoreの合成業務データ(顧客/注文)＋手作業の固定攻撃シナリオ＋計装。実送金なし、鍵は合成ダミー。
-- **Findings/learnings:** "Key results" / "Challenges" / "What we learned"。
+### 提出フォーム対応
+- **Features:** "What it does"
+- **Technologies:** "How I built it" / "Built with"
+- **Data sources:** `bigquery-public-data.cfpb_complaints.complaint_database`（第三者の実データ、3,458,906行）。
+  攻撃文面のみ red-team seeded として明示的に注入。実送金なし、鍵は合成ダミー。
+- **Findings / learnings:** "The measurement that changed the build" / "Challenges" / "What I learned" / "Limits"
