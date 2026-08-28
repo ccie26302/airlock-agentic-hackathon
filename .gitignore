@@ -9,3 +9,8 @@ debug_one.py
 seed_full.py
 poc_intercept.py
 .DS_Store
+
+# 撮影用の内部資料(製品ではない)
+demo-narration.md
+DEMO-SPEC.md
+RECORDING.md

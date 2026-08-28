@@ -1,4 +1,5 @@
 import hashlib, time, json, sys
+import main   # ハッシュ規約を本体と共有する(二重定義しない)
 from google.cloud import bigquery, firestore
 bq = bigquery.Client(project="forward-vector-470012-n8")
 rows = list(bq.query("""
@@ -24,7 +25,10 @@ plan = [
 ok = 0
 for r, p in zip(rows, plan):
     cid = f"C-{r['complaint_id']}"
-    payload = {"action":"transfer_money","amount":p["amount"],"recipient":"cardholder-of-record"}
+    # ★宛先とハッシュは main._action_hash と同じ規約に揃える。
+    #   ずれると「保留中に金額/宛先が変わった」と判定され、承認が永久に通らない。
+    payload = {"action": "transfer_money", "amount": p["amount"],
+               "recipient": f"cardholder-{r['complaint_id']}@example.com"}
     db.collection("cases").document(cid).set({
       "case_id": cid, "status":"awaiting_approval", "department":p["dept"], "agent":p["agent"],
       "source": {"dataset":"bigquery-public-data.cfpb_complaints","complaint_id":str(r["complaint_id"]),
@@ -33,7 +37,7 @@ for r, p in zip(rows, plan):
       "narrative_excerpt": (r["narrative"] or "")[:400],
       "escalation_reason": p["reason"], "question_for_human": p["question"],
       "proposed_action": payload,
-      "payload_hash": hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16],
+      "payload_hash": main._action_hash("transfer_money", payload),
       "context": [{"step":"read_source","note":"Pulled the complaint narrative from the warehouse"},
                   {"step":"classify","note":f"Classified as: {r['issue']}"},
                   {"step":"policy_check","note":p["reason"]},

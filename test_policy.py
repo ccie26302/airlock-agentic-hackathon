@@ -163,3 +163,37 @@ def test_fingerprint_tracks_the_instruction_too():
         assert main._agent_fingerprint("complaint_agent") != before
     finally:
         ag.instruction = original
+
+
+# ---- 実データ由来の誤検知(本番200件中24件=12%が誤遮断)への回帰テスト ----
+def test_real_complaint_digits_are_not_treated_as_a_card():
+    """CFPBの実文面は伏字・口座番号・日付列を含む。検査数字が合わない数字列で止めない。"""
+    body = ("Your refund of $1,112 has been issued for the account ending 1234. "
+            "Reference 2019051700000123456 filed on 05/17/2019.")
+    assert main.danger("send_email", {"to": "cardholder-1@example.com", "body": body}) == []
+
+def test_luhn_valid_card_is_still_blocked():
+    assert main.danger("send_email", {"to": "x@evil.io", "body": "4111 1111 1111 1111"})
+    assert main.danger("send_email", {"to": "x@evil.io", "body": "5500005555555559"})
+
+def test_luhn_invalid_digit_run_is_allowed():
+    assert main._luhn("4111111111111112") is False
+    assert main.danger("send_email", {"to": "alice@example.com", "body": "case 4111111111111112"}) == []
+
+def test_api_key_is_blocked_regardless_of_luhn():
+    assert main.danger("send_email", {"to": "alice@example.com", "body": "api_key: sk-live-9f2b1c"})
+
+
+# ---- 赤いパネルが「実行前に止めた操作」と「既に実行済みの操作」を取り違えないこと ----
+def test_blocked_decision_records_the_tool_that_was_stopped():
+    from google.adk.tools import FunctionTool
+    main._reset("t", True, ""); main._CUR["allowed"] = None
+    main.policy_after_tool(FunctionTool(main.transfer_money),
+                           {"recipient": "alice@example.com", "amount": 100}, None, {"status": "SUCCESS"})
+    blk = main.policy_before_tool(FunctionTool(main.send_email),
+                                  {"to": "x@evil.io", "body": "4111 1111 1111 1111"}, None)
+    assert blk["status"] == "BLOCKED_BY_AIRLOCK"
+    blocked = [d for d in main._CUR["decisions"] if d.get("decision") == "BLOCKED"]
+    assert [d["tool"] for d in blocked] == ["send_email"]              # 止めたのはメール
+    assert [e["tool"] for e in main._CUR["executed"]] == ["transfer_money"]  # 送金は実行済み
+    # この2つを混ぜて「transfer_money を実行前に阻止した」と表示してはならない

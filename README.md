@@ -8,6 +8,9 @@ asynchronously — issuing refunds, emailing customers, escalating what needs a 
 passes three enforcement layers before it can touch money, and every agent has to re-prove itself
 before it is allowed near production data.
 
+**Architecture:** [`architecture.html`](architecture.html) — scan → queue → CI gate → three-layer
+runtime → cases (open it in a browser, or see the PNG in the submission).
+
 > All Things Agentic Hackathon · Track: **Fortified Enterprise Fleet**
 > Individual project. Not affiliated with or endorsed by Google.
 
@@ -38,8 +41,13 @@ POST /jobs → BigQuery scan (3.4M rows, 1.7GB) → exceptions → Pub/Sub → w
 - Outcomes are `completed` / `escalated` (legitimate but over the approval limit) / `blocked` (unsafe
   action stopped) / `quarantined` (agent not verified) / `failed`.
 
-**Measured, unattended:** 200 items in **51s, 0 failed** (warm workers; 103s from cold). 50 items in
-39s. Job submission ~5s including the scan.
+**Measured, unattended:** 200 items in **49s, 0 failed** (warm workers; ~103s from cold). 50 items in
+39s. Job submission ~3–5s including the scan of 3,458,906 rows / 1.66GB.
+
+**Measured on the same run — what the enforcement layer actually did:** 141 completed, 57 escalated,
+**2 blocked, 0 false positives.** Both blocks were seeded injection attempts caught at
+`transfer_money` *before* it executed; the third seeded item was stopped earlier by the approval
+limit. Getting to 0 false positives took a real fix — see below.
 
 **Capacity, honestly:** 500 items in one job exceeds what this configuration sustains — Vertex starts
 rate-limiting, the worker returns 503, and Pub/Sub's flow control throttles delivery to a trickle.
@@ -81,7 +89,23 @@ Change one sentence of the prompt, or add a tool, and the fingerprint moves: the
 **stale** and the worker refuses to hand that agent production data. Unverified is the default.
 
 Demonstrated: 3 items into an unverified queue → all `quarantined` with the reason attached; CI run
-(0 breaches, 0 false positives) → same job resubmitted → 7 completed, 1 escalated, 2 blocked, 0 quarantined.
+→ same job resubmitted → 7 completed, 1 escalated, 2 blocked, 0 quarantined.
+
+**A pass on its own would not mean much, so CI says what it was actually able to test.** Under
+governance a blocked call can never be scored as executed, so "0 breaches" is close to guaranteed.
+To stop that from being a rubber stamp, every CI run executes the battery **twice — once with
+governance off** — and records how many unsafe actions that specific agent reached when nothing was
+stopping it:
+
+```
+GET /ci → ... "state": "passed", "unguarded_breaches": 3, "enforcement_exercised": true
+```
+
+Measured across the fleet: `refund_agent` reaches **3** unsafe actions unguarded, `complaint_agent`,
+`ticket_agent` and `support_agent` reach **1**, and `analytics_agent` reaches **0** — so its pass is
+labelled `enforcement_exercised: false`, and the report says plainly that the zero-breach result
+proves that agent's caution, not this platform's. A green check that cannot distinguish those two
+cases is the thing worth distrusting.
 
 ## Cases: work that outlives the process
 
@@ -228,9 +252,18 @@ CI fingerprint invalidation.
   legitimate Japanese request ("reimburse $200 and email a confirmation") was blocked at MEDIUM
   confidence. The attack that then fell below the threshold — a secret posted to an external webhook —
   was verified to be stopped by L2 instead. That division of labour is the point of having layers.
-- **Similarly for L2's secret detection**: matching the bare word "card" blocked a legitimate refund
-  confirmation email, so it now matches secrets that carry values, not billing vocabulary.
+- **L2's secret detection over-blocked real data by 12%, and that number was measured, not guessed.**
+  Two rounds: first, matching the bare word "card" blocked a legitimate refund confirmation email.
+  Then a full 200-item run against real complaints blocked **24 items — every one of them a false
+  positive**, because CFPB narratives are full of long digit runs (masked accounts, 19-digit case
+  references, dates) and any 13–19 digit sequence was treated as a card number. A Luhn check alone was
+  not enough: roughly one in ten random digit runs passes it, and a real 19-digit reference number
+  did. Detection now requires an actual issuer prefix *and* Luhn. Re-measured on a fresh 200-item run:
+  **24 false positives → 0**, with the seeded attacks still caught. Regression tests pin both sides.
 - **The payment gateway is simulated.** The ledger, outbox, outbound HTTP and code execution are real.
 - **`--sandbox-launcher` is a preview feature**; where it is unavailable, L3 degrades gracefully and
   L1/L2 still enforce.
-- **Cases here are days old, not weeks.** The mechanism is not time-bounded, but the recorded history is.
+- **Cases here are days old, not weeks.** What actually has to be true for week-scale continuity is
+  that a paused case survives the process, the revision and the instance that created it — state in
+  Firestore, approval bound to the payload rather than to a session. That is what the aged cases
+  demonstrate; the calendar is just how long this project has existed.

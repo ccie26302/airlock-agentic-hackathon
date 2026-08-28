@@ -22,13 +22,19 @@ Monday is not the agent running on Thursday.
   LLMs never touch all 3.4M rows — only the exceptions.
 - **Works them unattended.** Each exception is a Pub/Sub message consumed by a **private** Cloud Run
   service. Agents read the complaint, decide, issue the refund, email the customer, or escalate.
-  Measured: **200 items in 103 seconds, 0 failed, 0 human interventions.**
+  Measured: **200 items in 49 seconds, 0 failed, 0 human interventions during the run** —
+  141 completed, 57 escalated to a human, 2 blocked. About 28% is handed to a person, on purpose:
+  the number worth reporting is not how few humans it needs but where it decides it needs one.
 - **Enforces in three layers.** Model Armor screens the language; a deterministic policy stops
   dangerous tool calls *before they execute*; a Cloud Run sandbox contains code execution so a
   hijacked agent cannot exfiltrate credentials — the network does not exist inside it.
-- **Makes agents re-prove themselves.** CI results are bound to a fingerprint of the agent's
-  instruction and granted tools. Change the prompt, and the last pass goes stale and the worker
-  refuses to give that agent production data. Unverified is the default.
+- **Makes agents re-prove themselves — and says what the test actually proved.** CI is bound to a
+  fingerprint of the agent's instruction and granted tools; change the prompt and the last pass goes
+  stale and the worker refuses to give that agent production data. Because a blocked call can never
+  score as executed, every CI run also executes the battery with governance *off*, and reports how
+  many unsafe actions that agent reached unguarded. `refund_agent` reaches 3; `analytics_agent`
+  reaches 0, so its pass is labelled `enforcement_exercised: false` — its clean sheet is the agent's
+  caution, not the platform's.
 - **Keeps work that outlives the process.** Escalations become cases in Firestore; approving one
   replays its context and lets the agent finish. Approvals are single-use tickets bound to the exact
   amount and payee.
@@ -65,8 +71,16 @@ scale; Firestore holds state, cases and the audit trail; Model Armor screens lan
   have looped 20+ tool calls into a timeout and then a 429. Bounded to 8.
 - **Over-blocking measured, not guessed.** Model Armor at `LOW_AND_ABOVE` blocked a legitimate
   Japanese request; the attacks measured HIGH, so the threshold moved — and the attack that then fell
-  below it was verified to be stopped by the action layer instead. Separately, matching the bare word
-  "card" blocked a real refund confirmation email, so secret detection now looks for values.
+  below it was verified to be stopped by the action layer instead.
+- **The false-positive rate on real data was 12%, and I only found it by running it.** A 200-item run
+  blocked 24 items and **every one was a false positive**: real complaint narratives are full of long
+  digit runs, and any 13–19 digit sequence was being read as a card number. Luhn alone did not fix it
+  (a 19-digit case reference passed), so detection now requires a real issuer prefix and Luhn.
+  Re-measured on a fresh 200-item run: **24 → 0**, attacks still caught.
+- **A block that was not a block.** The alert panel listed the tools an item had executed and labelled
+  them "prevented before execution". On items where the refund went through and only the confirmation
+  email was stopped, it claimed the platform had prevented the payment. It now reports what was
+  stopped and what had already run — and hands the half-finished item to a person.
 
 ## What I learned
 Enforcement belongs where the money moves, not in the prompt. And the honest version of a security
@@ -79,7 +93,8 @@ predicate, so a blocked call cannot be scored as executed. It verifies enforceme
 the predicate covers every threat. A few hundred items per run is not "massive" and I don't call it
 that: the dataset is 3.4M rows and the scan really reads 1.7GB, but scale is shown by shape. The
 payment gateway is simulated; the ledger, outbox, outbound HTTP and code execution are real. Cases
-here are days old, not weeks.
+here are days old, not weeks — what week-scale continuity requires is that a paused case outlives
+the process, revision and instance that made it, which is what they demonstrate.
 
 ## Built with
 `gemini-3.5-flash` · `vertex-ai` · `google-adk` · `cloud-run` (gen2, sandbox) · `bigquery` ·
