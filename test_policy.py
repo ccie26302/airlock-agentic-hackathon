@@ -233,3 +233,15 @@ def test_explanation_only_is_neither():
 def test_unknown_or_missing_outcome_is_neither():
     for v in ("", None, "Untimely response", "In progress", "Closed"):
         assert main._classify_actual(v) == (False, False)
+
+
+# ---- 画面が落ちないこと: f-string内の未定義名は import では出ず、デプロイも成功してしまう ----
+# 実際に /mission が NameError: EN で 500 になり、デプロイは成功扱いだった。
+import pytest
+
+@pytest.mark.parametrize("page", ["mission", "console", "dashboard", "console_agents"])
+@pytest.mark.parametrize("lang", ["en", "ja"])
+def test_every_page_renders(page, lang):
+    fn = getattr(main, page)
+    kwargs = {"lang": lang} if "lang" in fn.__code__.co_varnames else {}
+    fn(**kwargs)        # 例外を出さないこと(HTMLのf-stringはここでしか評価されない)

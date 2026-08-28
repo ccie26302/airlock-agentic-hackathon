@@ -1583,7 +1583,8 @@ def firestore_arr_union(items):
 def mission(lang: str = "en"):
     """ミッションコントロール: 1画面で 投入→進行→判断ストリーム→事件→完走サマリ。"""
     en = lang != "ja"
-    T = {"sub": "Unattended processing of real customer complaints" if en else "実顧客データの無人処理",
+    T = {"caught": "caught of what the company really did" if en else "会社の実処理を捕捉",
+         "sub": "Unattended processing of real customer complaints" if en else "実顧客データの無人処理",
          "backlog": "unprocessed complaints in the queue" if en else "未処理の苦情がキューにあります",
          "scan": "scanned from 3,458,906 real CFPB complaints" if en else "実CFPB苦情 3,458,906件から抽出",
          "start": "Start the run" if en else "処理を開始",
@@ -1651,7 +1652,7 @@ def mission(lang: str = "en"):
    <div><div class='stat' style='color:#ff4d4f' id='c-blocked'>0</div><div class='statl'>{T['blk']}</div></div>
    <div><div class='stat' style='color:#94a3b8' id='c-failed'>0</div><div class='statl'>{T['fail']}</div></div>
    <div><div class='stat' style='color:#38bdf8' id='rate'>—</div><div class='statl'>items/min</div></div>
-   <div><div class='stat' style='color:#a78bfa' id='agree'>—</div><div class='statl'>{('caught of what the company really did' if EN else '会社の実処理を捕捉')}</div></div>
+   <div><div class='stat' style='color:#a78bfa' id='agree'>—</div><div class='statl'>{T['caught']}</div></div>
   </div>
  </div>
 
