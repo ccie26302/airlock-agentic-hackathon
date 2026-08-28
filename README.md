@@ -38,7 +38,13 @@ POST /jobs → BigQuery scan (3.4M rows, 1.7GB) → exceptions → Pub/Sub → w
 - Outcomes are `completed` / `escalated` (legitimate but over the approval limit) / `blocked` (unsafe
   action stopped) / `quarantined` (agent not verified) / `failed`.
 
-**Measured, unattended:** 200 items in **103s, 0 failed**. 50 items in 51s. Job submission ~5s.
+**Measured, unattended:** 200 items in **51s, 0 failed** (warm workers; 103s from cold). 50 items in
+39s. Job submission ~5s including the scan.
+
+**Capacity, honestly:** 500 items in one job exceeds what this configuration sustains — Vertex starts
+rate-limiting, the worker returns 503, and Pub/Sub's flow control throttles delivery to a trickle.
+Nothing is lost (no dead letters, no stuck leases) but the tail takes many minutes. 200 per job is
+the size this runs comfortably; going higher is a concurrency and quota exercise, not a code change.
 
 ## The three layers, and what each one actually catches
 

@@ -1138,8 +1138,10 @@ def _scan_and_select(department: str, count: int):
     ORDER BY SAFE_CAST(complaint_id AS INT64) DESC
     LIMIT @n"""
     from google.cloud import bigquery as _bqm
+    # ★キャッシュを使わない: 毎回本当に走査する(でないと "1.7GB読んだ" が0バイトになる)
     job = _bq().query(sql, job_config=_bqm.QueryJobConfig(
-        query_parameters=[_bqm.ScalarQueryParameter("n", "INT64", count)]))
+        query_parameters=[_bqm.ScalarQueryParameter("n", "INT64", count)],
+        use_query_cache=False))
     rows = list(job.result())
     return rows, job.total_bytes_processed or 0
 
