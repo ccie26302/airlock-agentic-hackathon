@@ -176,8 +176,11 @@ behaviour and is what you see in the CI table.
 
 **Where it runs.** Cloud Run GPU is the better home for this — it scales to zero, so the GPU costs
 nothing between runs — and `gemma/` holds the Ollama image and `deploy.sh` for exactly that. This
-project has no Cloud Run GPU quota (both L4 pools return zero), so the live one is a Vertex AI
-endpoint on an L4, which does not scale to zero. That is a cost decision, stated rather than hidden.
+project is refused Cloud Run GPU on quota grounds — both L4 pools, and with the correct flag set
+including `--no-cpu-throttling`. The quota APIs return no readable number for those metrics, so
+"refused" is what can be claimed rather than "zero"; it is requestable at `g.co/cloudrun/gpu-quota`.
+The live one is therefore a Vertex AI endpoint on an L4, which does not scale to zero. That is a cost
+decision, stated rather than hidden.
 
 ## Departments: a catalog with handoffs, not a list
 
