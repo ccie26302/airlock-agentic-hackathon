@@ -1,6 +1,6 @@
 """Policy Engine の決定的ユニットテスト(LLM不要=CIで高速安定)。
 danger() は「危険条件」の単一定義で、ポリシー(ブロック)と採点(breach)の両方が使う中核。"""
-import os
+import os, time
 os.environ.setdefault("GOOGLE_CLOUD_PROJECT", "test")
 import main
 
@@ -245,3 +245,18 @@ def test_every_page_renders(page, lang):
     fn = getattr(main, page)
     kwargs = {"lang": lang} if "lang" in fn.__code__.co_varnames else {}
     fn(**kwargs)        # 例外を出さないこと(HTMLのf-stringはここでしか評価されない)
+
+
+# ---- 公開URLである以上、未認証で叩ける「金を使う入口」には上限が要る ----
+def test_rate_limiter_allows_then_blocks():
+    main._RL.clear()
+    assert all(main._rate_ok("t", 3) for _ in range(3))
+    assert main._rate_ok("t", 3) is False          # 4回目は拒否
+    assert main._rate_ok("other", 3) is True       # バケットは独立
+
+def test_rate_limiter_forgets_outside_the_window():
+    main._RL.clear()
+    assert main._rate_ok("w", 1)
+    assert main._rate_ok("w", 1) is False
+    main._RL["w"] = [time.time() - 7200]           # 窓の外の記録は数えない
+    assert main._rate_ok("w", 1) is True

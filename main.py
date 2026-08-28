@@ -251,6 +251,24 @@ def _num(v) -> float:
 def _trusted(addr: str) -> bool:
     return any(addr.endswith(s) for s in TRUSTED_SUFFIXES)
 
+_RL: dict = {}
+def _rate_ok(bucket: str, limit: int, window: int = 3600) -> bool:
+    """未認証でも触れる入口の費用に上限をかける。公開URLである以上、開いている=無制限ではいけない。
+    運用トークンを持つ側は制限しない(審査員は試せる/運用は詰まらない)。"""
+    now = time.time()
+    q = _RL.setdefault(bucket, [])
+    q[:] = [t for t in q if now - t < window]
+    if len(q) >= limit:
+        return False
+    q.append(now)
+    return True
+
+def _rate_limited(bucket: str, limit: int):
+    return JSONResponse(status_code=429, content={
+        "error": f"hourly limit for anonymous use reached ({limit}/hour) — this endpoint spends model "
+                 f"quota, and the URL is public. Operators with a token are not limited.",
+        "bucket": bucket})
+
 def _action_hash(name: str, args: dict) -> str:
     """承認を束縛するための正規化ハッシュ。金額と宛先のみを見る（表記揺れに強く、改ざんには弱くない）。"""
     import hashlib
@@ -889,7 +907,10 @@ def healthz():
 
 @app.post("/run")
 async def run(req: RunReq, request: Request):
-    gov = req.governance if _is_authorized(request) else True  # 未認証はON強制(open relay防止)
+    op = _is_authorized(request)
+    gov = req.governance if op else True       # 未認証はON強制(open relay防止)
+    if not op and not _rate_ok("run", RUN_LIMIT_PER_HOUR):
+        return _rate_limited("run", RUN_LIMIT_PER_HOUR)   # ★Vertexを呼ぶ経路。公開URLなので上限が要る
     name = req.agent
     if name not in _AGENTS:                      # ★フォールバック禁止(より強い権限へ落ちる=権限昇格)
         _restore_fleet()                          # 生成済みエージェントを永続化から復元して再確認
@@ -999,7 +1020,9 @@ def sandbox_probe_result():
             "cloud_run_sandbox_L3": _run(["sandbox", "do", "--", "/bin/sh", "-c", inner])}
 
 @app.get("/sandbox_probe")
-def sandbox_probe():
+def sandbox_probe(request: Request):
+    if not _is_authorized(request) and not _rate_ok("probe", PROBE_LIMIT_PER_HOUR):
+        return _rate_limited("probe", PROBE_LIMIT_PER_HOUR)   # ★コードを実際に実行する経路
     return sandbox_probe_result()
 
 # ---- ツール = そのエージェントが「できること」。UIはここから自動生成する ----
@@ -2153,6 +2176,8 @@ class GenReq(BaseModel):
 
 _GEN_LOG = []   # 未認証の作成レート制限(コスト暴走の防止)
 GEN_LIMIT_PER_HOUR = int(os.environ.get("GEN_LIMIT_PER_HOUR", "20"))
+RUN_LIMIT_PER_HOUR = int(os.environ.get("RUN_LIMIT_PER_HOUR", "40"))     # 未認証の試用枠
+PROBE_LIMIT_PER_HOUR = int(os.environ.get("PROBE_LIMIT_PER_HOUR", "12"))
 
 @app.post("/generate")
 async def generate(req: GenReq, request: Request):

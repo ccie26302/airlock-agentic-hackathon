@@ -307,6 +307,10 @@ CI fingerprint invalidation.
   quota or moves the ledger needs a gate. IAM or IAP is the correct gate for a real deployment and
   the wrong one here: it would stop a reviewer at the door. A shared token keeps the platform
   readable by anyone and side-effecting for nobody who does not hold it.
+  The two endpoints that stay open — `/run` and `/sandbox_probe`, so a reviewer can actually try an
+  agent and see the sandbox contain one — spend model quota and execute code, so anonymous use is
+  capped per hour (40 and 12) and returns 429 with the reason. Holding the token lifts the cap. Open
+  is not the same as unlimited when the URL is public.
   What it costs: one secret for all operators, kept in `localStorage`, and a case that records
   "operator" rather than a person. In production this becomes IAP with the approver's identity
   written into the case. The single-use, payload-bound approval ticket is the part that is already
