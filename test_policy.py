@@ -260,3 +260,13 @@ def test_rate_limiter_forgets_outside_the_window():
     assert main._rate_ok("w", 1) is False
     main._RL["w"] = [time.time() - 7200]           # 窓の外の記録は数えない
     assert main._rate_ok("w", 1) is True
+
+
+# ---- 承認による再開は、起票したエージェントと同じでなければならない ----
+def test_seeded_case_agents_all_exist():
+    """seed が実在しないエージェント名を書いていると、承認時に別のポリシーで金が動く。
+    実際に expense_agent という存在しない名前が書かれていた。"""
+    import re as _re
+    src = open("seed_cases.py", encoding="utf-8").read()
+    for name in _re.findall(r'agent="([^"]+)"', src):
+        assert name in main._AGENTS, f"seed_cases.py references unknown agent {name!r}"

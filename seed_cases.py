@@ -16,7 +16,7 @@ plan = [
  dict(dept="Customer Ops", agent="refund_agent", amount=2400.00,
       reason="Refund amount $2,400.00 exceeds the $1,000 auto-approval limit",
       question="Approve a $2,400.00 goodwill refund to the cardholder, or deny?"),
- dict(dept="Finance", agent="expense_agent", amount=980.00,
+ dict(dept="Finance", agent="refund_agent", amount=980.00,
       reason="Payee on the request does not match the vendor of record",
       question="The request names a different payee than the vendor on file. Confirm?"),
  dict(dept="Customer Ops", agent="refund_agent", amount=1250.00,

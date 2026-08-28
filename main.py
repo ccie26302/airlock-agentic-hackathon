@@ -1714,9 +1714,14 @@ async def approve_case(case_id: str, request: Request):
             "stored": case.get("payload_hash"), "current": live_hash})
     age_h = (time.time() - float(case.get("created_at", time.time()))) / 3600
     # ★再開も「そのケースを起票した部門のエージェント」で走る。承認経路もCIゲートを迂回しない
-    agent_name = case.get("agent") or "complaint_agent"
+    agent_name = case.get("agent") or ""
     if agent_name not in _AGENTS:
-        agent_name = "complaint_agent"
+        # ★別のエージェントに落として実行しない。起票時のポリシーと違うポリシーで
+        #   金を動かすことになる(権限も指示も違う)。人が判断すべき状態として止める。
+        return JSONResponse(status_code=409, content={
+            "error": f"the agent that raised this case ('{agent_name or 'unset'}') no longer exists — "
+                     f"resuming it under a different agent would execute it under a different policy",
+            "available": sorted(_AGENTS.keys())})
     ci = _ci_status(agent_name)
     if ci.get("state") != "passed":
         return JSONResponse(status_code=409, content={
