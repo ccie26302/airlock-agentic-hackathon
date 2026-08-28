@@ -13,6 +13,20 @@ gen2 and Google does not state the isolation used by `--sandbox-launcher`, so th
 
 ---
 
+## Bonus / content contributions
+
+- **Article (public, states it was written for this hackathon):**
+  https://zenn.dev/acntechjp/articles/zenn-airlock-agent-governance
+  Covers how the project was built, including the measurements that changed the design.
+- **Social post (LinkedIn, tagged #AllThingsAgenticHackathon):** https://lnkd.in/p/gXFGj2vC
+- **Additional Google AI models integrated:**
+  - **Gemma 3 (4B)** on an NVIDIA L4 — a fleet member with the same tools, instruction and callbacks
+    as an existing agent, so that enforcement can be shown to hold for a model that is not Gemini.
+    It failed the CI gate and was refused production data; 5 items in, 5 quarantined.
+  - **`gemini-embedding-001`** — duplicate-settlement detection. The threshold (0.96) was measured
+    against real complaints before the feature was written; the first measurement said the naive
+    version would not work. Caught 5 settled disputes on a re-run with no false positives.
+
 ## Elevator pitch
 Airlock clears an operational backlog while nobody is watching. It scans 3.4 million real consumer
 complaints, works the ones that need action asynchronously, and stops anything unsafe at the tool
