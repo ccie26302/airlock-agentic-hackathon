@@ -187,6 +187,41 @@ dedicated endpoint with `min_replica_count` at 1 — it does not scale to zero a
 Vertex does support scale-to-zero on dedicated endpoints (`min_replica_count: 0`, v1beta1); this
 deployment simply does not use it. Stated rather than hidden, because it is a real bill.
 
+## The duplicate the ledger could not see
+
+`refunds/{item_id}` makes redelivery safe: the same item is never paid twice. It says nothing about
+two *different* complaints that are the same dispute — the customer who files again a month later. A
+seeded case in this repo has literally said "Duplicate settlement suspected for the same billing
+dispute" since the beginning, and nothing was looking for it.
+
+**The threshold was measured before the feature was written, and the first measurement said no.**
+Embedding 12 complaints against the same company and issue and 12 unrelated ones
+(`gemini-embedding-001`, 3072 dims), the two distributions overlap badly: same-issue pairs sit at a
+median of 0.863 (max 0.910), unrelated pairs at 0.834 — but with a **max of 0.946, above the
+same-issue max**. Everything in this dataset is written in the same register, so "semantically
+similar" does not mean "the same dispute". Shipping a threshold there would have been a control that
+controls nothing.
+
+What does separate is the case the control is actually for — the *same* dispute filed again:
+
+| | similarity |
+|---|---|
+| identical text | 1.000 |
+| lightly edited refiling | 0.997 |
+| same dispute rewritten | 0.974 |
+| unrelated complaints (66 real pairs) | **max 0.946** |
+
+So the threshold sits at **0.96**, in that gap. The check runs before the agent does, so `danger()`
+stays a deterministic predicate reading a precomputed number rather than making a network call, and a
+match escalates to a human rather than blocking — the positive side of that calibration is thin.
+
+Measured end to end: the same 40 items run twice. The second run caught **5 settled disputes at
+similarity 1.000** and escalated them for approval, with no false positives among the other 33.
+
+**Honest limit:** the 0.974 figure for a rewritten dispute is one constructed pair. The false-positive
+ceiling (0.946) is from 66 real ones. The threshold is better evidenced on the side that says "do not
+fire" than on the side that says "fire".
+
 ## Departments: a catalog with handoffs, not a list
 
 `DEPARTMENTS` maps each department to the agent that works it **and to where it hands off when it

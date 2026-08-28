@@ -311,3 +311,27 @@ def test_push_verification_is_fail_closed_without_config():
         assert main._verify_push(_Req()) is False
     finally:
         main.PUSH_SA = orig
+
+
+# ---- 二重和解の検出: 閾値は実測(無関係の最大0.946 / 同紛争の書き直し0.974)の隙間に置く ----
+def test_duplicate_settlement_needs_a_human_above_threshold():
+    main._reset("t", True, ""); main._CUR["allowed"] = None
+    main._CUR["dupe"] = {"sim": 0.985, "prior_item": "J-x-1"}
+    r = main.danger("transfer_money", {"recipient": "alice@example.com", "amount": 100})
+    assert r and "double settlement" in r[0]
+
+def test_unrelated_complaint_does_not_trip_the_duplicate_check():
+    """無関係な苦情同士の実測最大は0.946。閾値0.96はその上にある。"""
+    main._reset("t", True, ""); main._CUR["allowed"] = None
+    main._CUR["dupe"] = {"sim": 0.946, "prior_item": "J-x-1"}
+    assert main.danger("transfer_money", {"recipient": "alice@example.com", "amount": 100}) == []
+
+def test_duplicate_check_absent_is_not_dangerous():
+    """埋め込みが取れなかった場合に支払いを止めない(付加的な統制であって必須条件ではない)。"""
+    main._reset("t", True, ""); main._CUR["allowed"] = None
+    main._CUR["dupe"] = None
+    assert main.danger("transfer_money", {"recipient": "alice@example.com", "amount": 100}) == []
+
+def test_cosine_matches_itself():
+    v = [0.1, 0.2, 0.3]
+    assert abs(main._cosine(v, v) - 1.0) < 1e-9

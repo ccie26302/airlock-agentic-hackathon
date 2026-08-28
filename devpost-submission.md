@@ -95,6 +95,18 @@ scale; Firestore holds state, cases and the audit trail; Model Armor screens lan
   email was stopped, it claimed the platform had prevented the payment. It now reports what was
   stopped and what had already run — and hands the half-finished item to a person.
 
+## The duplicate the ledger could not see
+The ledger makes redelivery safe — the same item is never paid twice — but says nothing about two
+different complaints that are the same dispute. A second Google model, `gemini-embedding-001`, now
+compares each complaint against the disputes already settled.
+
+The threshold was measured first, and the first measurement said no: across real complaints, unrelated
+pairs reach 0.946 while same-company/same-issue pairs top out at 0.910 — the distributions overlap, so
+"similar" does not mean "the same dispute". What does separate is the case the control is for: a
+refiling scores 0.974–1.000. The threshold sits at 0.96, in that gap, and a match escalates to a human
+rather than blocking. Measured: the same 40 items run twice, and the second run caught 5 settled
+disputes at 1.000 with no false positives among the other 33.
+
 ## A second model, and the bug it exposed
 Enforcement sits in the tool callback, below the model — so it should hold for a model that is not
 Gemini. The fleet now includes `gemma_intake_agent`: **Gemma 3 (4B) on an NVIDIA L4**, with the same
