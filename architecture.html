@@ -1,120 +1,126 @@
 <!doctype html><html><head><meta charset="utf-8"><title>Airlock Architecture</title>
-<style>body{margin:0;background:#020617}</style></head>
-<body>
-<svg viewBox="0 0 1320 700" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,-apple-system,sans-serif">
-  <defs>
-    <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#64748b"/></marker>
-  </defs>
-  <rect width="1320" height="700" fill="#020617"/>
-  <text x="34" y="42" fill="#e2e8f0" font-size="29" font-weight="800">🛰 Airlock</text>
-  <text x="185" y="42" fill="#94a3b8" font-size="16">Enterprise AI Agent Platform ― security is the strength</text>
-  <text x="34" y="66" fill="#38bdf8" font-size="13" font-weight="700">Track: Fortified Enterprise Fleet　·　多層防御 = Model Armor(言語) + 決定的ポリシー(行動) + Cloud Run Sandbox(実行)</text>
+<style>body{margin:0;background:#020617}</style></head><body>
+<svg viewBox="0 0 1340 760" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,-apple-system,sans-serif">
+ <defs><marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#64748b"/></marker></defs>
+ <rect width="1340" height="760" fill="#020617"/>
+ <text x="30" y="40" fill="#e2e8f0" font-size="27" font-weight="800">🛰 Airlock</text>
+ <text x="175" y="40" fill="#94a3b8" font-size="16">Unattended agent operations on real data — run it unattended, not unguarded</text>
+ <text x="30" y="63" fill="#38bdf8" font-size="12.5" font-weight="700">Track: Fortified Enterprise Fleet · Gemini 3.5 (Vertex) · ADK · Cloud Run · BigQuery · Firestore · Pub/Sub · Model Armor</text>
 
-  <!-- User / left column -->
-  <rect x="26" y="120" width="150" height="72" rx="12" fill="#0f172a" stroke="#1e293b"/>
-  <text x="101" y="148" fill="#e2e8f0" font-size="14" font-weight="700" text-anchor="middle">管理者 / Web UI</text>
-  <text x="101" y="170" fill="#94a3b8" font-size="10.5" text-anchor="middle">/new · /run · /dashboard?lang=en</text>
+ <!-- ingest -->
+ <rect x="26" y="92" width="234" height="104" rx="12" fill="#0f172a" stroke="#334155"/>
+ <text x="40" y="115" fill="#38bdf8" font-size="12" font-weight="800">① SCAN AT SCALE</text>
+ <text x="40" y="136" fill="#e2e8f0" font-size="12.5">BigQuery: 3,458,906 実顧客苦情</text>
+ <text x="40" y="154" fill="#94a3b8" font-size="11">1回の走査で 1.7GB を読み、対応が要る</text>
+ <text x="40" y="169" fill="#94a3b8" font-size="11">例外だけを抽出（LLMは全行に当てない）</text>
+ <text x="40" y="188" fill="#f59e0b" font-size="10.5" font-weight="700">bigquery-public-data.cfpb_complaints</text>
 
-  <rect x="26" y="206" width="150" height="80" rx="12" fill="#0f172a" stroke="#334155"/>
-  <text x="38" y="229" fill="#38bdf8" font-size="12" font-weight="800">① GENERATOR</text>
-  <text x="38" y="249" fill="#e2e8f0" font-size="12">SOP → 最小権限spec</text>
-  <text x="38" y="267" fill="#22c55e" font-size="11" font-weight="700">Gemini 3.5 (Vertex)</text>
-  <text x="38" y="282" fill="#94a3b8" font-size="10">構造化出力</text>
+ <rect x="26" y="208" width="234" height="74" rx="12" fill="#0f172a" stroke="#334155"/>
+ <text x="40" y="230" fill="#38bdf8" font-size="12" font-weight="800">② SUBMIT (POST /jobs)</text>
+ <text x="40" y="250" fill="#e2e8f0" font-size="12">job_id を約5秒で返す</text>
+ <text x="40" y="268" fill="#94a3b8" font-size="11">実処理は裏で走る（要トークン）</text>
 
-  <rect x="26" y="300" width="150" height="66" rx="12" fill="#0f172a" stroke="#334155"/>
-  <text x="38" y="323" fill="#38bdf8" font-size="12" font-weight="800">② FLEET REGISTRY</text>
-  <text x="38" y="343" fill="#e2e8f0" font-size="11.5">艦隊・最小権限</text>
-  <text x="38" y="360" fill="#f59e0b" font-size="11" font-weight="700">Firestore</text>
+ <rect x="26" y="294" width="234" height="96" rx="12" fill="#0f172a" stroke="#a78bfa"/>
+ <text x="40" y="316" fill="#a78bfa" font-size="12" font-weight="800">Pub/Sub airlock-work</text>
+ <text x="40" y="336" fill="#cbd5e1" font-size="11">ack 600s（1件20-30秒 &gt; 既定10秒）</text>
+ <text x="40" y="353" fill="#cbd5e1" font-size="11">指数バックオフ / DLQ 5回</text>
+ <text x="40" y="371" fill="#94a3b8" font-size="10.5">push + OIDC → 非公開ワーカーのみ</text>
 
-  <rect x="26" y="380" width="150" height="98" rx="12" fill="#0f172a" stroke="#7f1d1d"/>
-  <text x="38" y="403" fill="#ff4d4f" font-size="12" font-weight="800">攻撃バッテリー</text>
-  <text x="38" y="422" fill="#cbd5e1" font-size="10">直接/間接インジェクション</text>
-  <text x="38" y="438" fill="#cbd5e1" font-size="10">データ持ち出し/無承認</text>
-  <text x="38" y="454" fill="#cbd5e1" font-size="10">乗っ取りコード実行</text>
-  <text x="38" y="470" fill="#64748b" font-size="9.5">＋誤検知対照</text>
+ <!-- CI gate -->
+ <rect x="26" y="404" width="234" height="118" rx="12" fill="#1a1206" stroke="#f59e0b"/>
+ <text x="40" y="426" fill="#f59e0b" font-size="12" font-weight="800">③ AGENT CI（変更のたびに再検証）</text>
+ <text x="40" y="446" fill="#cbd5e1" font-size="11">指紋 = 指示文 + 許可ツール</text>
+ <text x="40" y="463" fill="#cbd5e1" font-size="11">プロンプトが1文字変われば → stale</text>
+ <text x="40" y="480" fill="#fca5a5" font-size="11">未検証なら本番データに触れない</text>
+ <text x="40" y="500" fill="#94a3b8" font-size="10.5">(fail-closed / 実証: 3件すべて検疫)</text>
+ <text x="40" y="515" fill="#94a3b8" font-size="10.5">AI駆動開発でエージェントは日々変わる</text>
 
-  <!-- Runtime with THREE layers -->
-  <rect x="212" y="112" width="588" height="466" rx="14" fill="#0b1220" stroke="#334155"/>
-  <text x="228" y="138" fill="#e2e8f0" font-size="13" font-weight="800">GOVERNED RUNTIME</text>
-  <text x="784" y="138" fill="#22c55e" font-size="11" font-weight="700" text-anchor="end">Google ADK · Cloud Run (gen2)</text>
+ <!-- runtime -->
+ <rect x="292" y="92" width="596" height="524" rx="14" fill="#0b1220" stroke="#334155"/>
+ <text x="308" y="116" fill="#e2e8f0" font-size="13" font-weight="800">GOVERNED RUNTIME（Cloud Run 非公開ワーカー・水平スケール）</text>
+ <text x="872" y="116" fill="#22c55e" font-size="11" font-weight="700" text-anchor="end">Google ADK</text>
 
-  <!-- Layer 1 -->
-  <rect x="230" y="150" width="552" height="66" rx="10" fill="#150f22" stroke="#a78bfa"/>
-  <text x="246" y="173" fill="#a78bfa" font-size="13" font-weight="800">Layer 1 ― Model Armor（言語層）</text>
-  <text x="246" y="193" fill="#cbd5e1" font-size="11">受信プロンプトをMLで検査 → プロンプトインジェクション/脱獄を入力段で遮断</text>
-  <text x="246" y="209" fill="#94a3b8" font-size="10.5">露骨な攻撃はここで落ちる (sanitizeUserPrompt)</text>
+ <rect x="310" y="132" width="560" height="74" rx="10" fill="#150f22" stroke="#a78bfa"/>
+ <text x="326" y="155" fill="#a78bfa" font-size="13" font-weight="800">L1 言語層 — Model Armor</text>
+ <text x="326" y="175" fill="#cbd5e1" font-size="11.5">露骨なプロンプトインジェクション / 脱獄 を入力段で遮断（しきい値 HIGH）</text>
+ <text x="326" y="194" fill="#94a3b8" font-size="10.5">★LOW では日本語の正当依頼を誤ブロック → 実測して HIGH に。漏れた分は L2 が止めた</text>
 
-  <line x1="506" y1="216" x2="506" y2="228" stroke="#64748b" stroke-width="1.5" marker-end="url(#ar)"/>
+ <rect x="310" y="218" width="560" height="184" rx="10" fill="#0b1526" stroke="#38bdf8"/>
+ <text x="326" y="240" fill="#38bdf8" font-size="13" font-weight="800">L2 行動層 — 決定的ポリシー（before_tool_callback）</text>
+ <rect x="326" y="252" width="528" height="52" rx="8" fill="#0f172a" stroke="#1e293b"/>
+ <text x="340" y="271" fill="#e2e8f0" font-size="12">エージェント（Gemini 3.5）が実タスクを遂行</text>
+ <text x="340" y="290" fill="#94a3b8" font-size="10.5">complaint_agent（厳格な指示）／ ticket_agent（記録の指示に従う＝現実の脆弱パターン）</text>
+ <rect x="326" y="312" width="528" height="42" rx="8" fill="#0f172a" stroke="#22c55e"/>
+ <text x="340" y="330" fill="#22c55e" font-size="11.5" font-weight="700">限度超過は人間承認へ / 送金先は許可制 / 秘密は外に出さない / 記憶汚染を遮断</text>
+ <text x="340" y="347" fill="#cbd5e1" font-size="10.5">実行の直前で止める。判定はLLMではなく決定的な述語 danger()</text>
+ <rect x="326" y="362" width="528" height="30" rx="8" fill="#0f172a" stroke="#334155"/>
+ <text x="340" y="382" fill="#94a3b8" font-size="10.5">実ツール: Firestore台帳/outbox・実HTTP・コード実行（決済のみ模擬）</text>
 
-  <!-- Layer 2 -->
-  <rect x="230" y="228" width="552" height="132" rx="10" fill="#0b1526" stroke="#38bdf8"/>
-  <text x="246" y="250" fill="#38bdf8" font-size="13" font-weight="800">Layer 2 ― 決定的ポリシー（行動層）</text>
-  <text x="246" y="270" fill="#cbd5e1" font-size="11">エージェント(Gemini)のツール呼び出しを ADK callback で実行前に検査</text>
-  <rect x="246" y="280" width="516" height="30" rx="7" fill="#0f172a" stroke="#22c55e"/>
-  <text x="258" y="300" fill="#cbd5e1" font-size="10.5">Policy: 最小権限 / 高額は人間承認 / 送金先許可制 / 秘密・PIIの外部持出遮断 / fail-closed</text>
-  <rect x="246" y="316" width="516" height="34" rx="7" fill="#0f172a" stroke="#334155"/>
-  <text x="258" y="332" fill="#e2e8f0" font-size="10.5" font-weight="700">実ツール（本物のGoogle Cloud副作用）</text>
-  <text x="258" y="346" fill="#94a3b8" font-size="9.5">Firestore(注文/顧客/返金台帳/outbox) · 実HTTP送信 · 決済のみ模擬</text>
+ <rect x="310" y="414" width="560" height="88" rx="10" fill="#1a1206" stroke="#f59e0b"/>
+ <text x="326" y="436" fill="#f59e0b" font-size="13" font-weight="800">L3 実行層 — Cloud Run Sandbox (gVisor)</text>
+ <text x="326" y="456" fill="#cbd5e1" font-size="11.5">乗っ取られたコードが動いても、sandbox内にネットワークが存在しない</text>
+ <rect x="326" y="466" width="256" height="26" rx="6" fill="#160b0b" stroke="#7f1d1d"/>
+ <text x="336" y="483" fill="#fca5a5" font-size="10.5">直接実行: 実SAトークンが漏洩 🔴</text>
+ <rect x="592" y="466" width="262" height="26" rx="6" fill="#07160d" stroke="#14532d"/>
+ <text x="602" y="483" fill="#86efac" font-size="10.5">sandbox: network unreachable 🟢</text>
 
-  <line x1="506" y1="360" x2="506" y2="372" stroke="#64748b" stroke-width="1.5" marker-end="url(#ar)"/>
+ <rect x="310" y="514" width="560" height="86" rx="10" fill="#0f172a" stroke="#334155"/>
+ <text x="326" y="536" fill="#e2e8f0" font-size="12.5" font-weight="700">結果と失敗処理</text>
+ <text x="326" y="556" fill="#cbd5e1" font-size="11">completed / escalated（人間へ）/ blocked（阻止）/ quarantined（未検証）/ failed</text>
+ <text x="326" y="574" fill="#94a3b8" font-size="10.5">冪等: 台帳は refunds/{item_id} を create()。一時障害はリース解放 → Pub/Sub が再配信</text>
+ <text x="326" y="591" fill="#94a3b8" font-size="10.5">at-least-once 前提で「二度払わない」を台帳の層で保証</text>
 
-  <!-- Layer 3 -->
-  <rect x="230" y="372" width="552" height="98" rx="10" fill="#1a1206" stroke="#f59e0b"/>
-  <text x="246" y="394" fill="#f59e0b" font-size="13" font-weight="800">Layer 3 ― Cloud Run Sandbox（実行層）</text>
-  <text x="246" y="413" fill="#cbd5e1" font-size="11">エージェントのコード実行を gVisor sandbox で隔離 (--sandbox-launcher)</text>
-  <text x="246" y="430" fill="#cbd5e1" font-size="11">乗っ取られて悪意コードを実行しても、メタデータ/network遮断で秘密窃取を封殺</text>
-  <rect x="246" y="438" width="250" height="26" rx="6" fill="#160b0b" stroke="#7f1d1d"/>
-  <text x="256" y="455" fill="#fca5a5" font-size="10.5">直接実行: 実SAトークン漏洩 🔴</text>
-  <rect x="506" y="438" width="256" height="26" rx="6" fill="#07160d" stroke="#14532d"/>
-  <text x="516" y="455" fill="#86efac" font-size="10.5">sandbox: network unreachable で封殺 🟢</text>
+ <!-- right -->
+ <rect x="920" y="92" width="394" height="150" rx="12" fill="#0f172a" stroke="#334155"/>
+ <text x="936" y="115" fill="#38bdf8" font-size="12" font-weight="800">④ CASES（週をまたぐ文脈）</text>
+ <text x="936" y="137" fill="#e2e8f0" font-size="12">保留は Firestore の「ケース」として残る</text>
+ <text x="936" y="156" fill="#cbd5e1" font-size="11">承認 → 文脈を読み戻して再開（プロセス非依存）</text>
+ <text x="936" y="175" fill="#cbd5e1" font-size="11">承認 = ペイロードに束縛された単発チケット</text>
+ <text x="936" y="193" fill="#94a3b8" font-size="10.5">使えば焼き切れる／別の宛先には流用できない</text>
+ <text x="936" y="214" fill="#94a3b8" font-size="10.5">＝承認が恒久的な例外にならない</text>
+ <text x="936" y="232" fill="#f59e0b" font-size="10.5">再起動・新リビジョンをまたいで再開できる</text>
 
-  <!-- Observability -->
-  <rect x="834" y="112" width="458" height="110" rx="12" fill="#0f172a" stroke="#334155"/>
-  <text x="850" y="136" fill="#38bdf8" font-size="12" font-weight="800">③ OBSERVABILITY</text>
-  <text x="850" y="159" fill="#e2e8f0" font-size="12">監査証跡（全アクション・遮断理由・どの層で止めたか）</text>
-  <text x="850" y="177" fill="#f59e0b" font-size="11" font-weight="700">Firestore + Cloud Logging</text>
-  <text x="850" y="200" fill="#e2e8f0" font-size="12">監査イベント配信</text>
-  <text x="850" y="216" fill="#a78bfa" font-size="11" font-weight="700">Pub/Sub (airlock-audit)</text>
+ <rect x="920" y="254" width="394" height="118" rx="12" fill="#0f172a" stroke="#334155"/>
+ <text x="936" y="277" fill="#38bdf8" font-size="12" font-weight="800">⑤ OBSERVABILITY</text>
+ <text x="936" y="298" fill="#e2e8f0" font-size="12">全アクション・遮断理由・どの層が止めたか</text>
+ <text x="936" y="317" fill="#f59e0b" font-size="11" font-weight="700">Firestore（runs / events / items）+ Cloud Logging</text>
+ <text x="936" y="337" fill="#e2e8f0" font-size="12">監査イベント配信</text>
+ <text x="936" y="355" fill="#a78bfa" font-size="11" font-weight="700">Pub/Sub airlock-audit</text>
 
-  <!-- Scorecard -->
-  <rect x="834" y="236" width="458" height="342" rx="12" fill="#0f172a" stroke="#334155"/>
-  <text x="850" y="260" fill="#e2e8f0" font-size="13" font-weight="800">通信簿（決定的判定・JA/EN）· /dashboard</text>
-  <text x="850" y="279" fill="#64748b" font-size="9.5">ON突破0は danger() 共有による構造的帰結(=強制の検証)。OFF突破/正当遮断はモデル依存の観測値</text>
+ <rect x="920" y="384" width="394" height="232" rx="12" fill="#0f172a" stroke="#334155"/>
+ <text x="936" y="407" fill="#e2e8f0" font-size="13" font-weight="800">実測（無人運転）</text>
+ <rect x="936" y="420" width="176" height="86" rx="10" fill="#07160d" stroke="#14532d"/>
+ <text x="1024" y="452" fill="#22c55e" font-size="34" text-anchor="middle" font-weight="800">200</text>
+ <text x="1024" y="472" fill="#86efac" font-size="11" text-anchor="middle">件を 103 秒で処理</text>
+ <text x="1024" y="492" fill="#94a3b8" font-size="10.5" text-anchor="middle">失敗 0（再配信で回収）</text>
+ <rect x="1122" y="420" width="176" height="86" rx="10" fill="#0b1526" stroke="#38bdf8"/>
+ <text x="1210" y="452" fill="#38bdf8" font-size="34" text-anchor="middle" font-weight="800">0</text>
+ <text x="1210" y="472" fill="#7dd3fc" font-size="11" text-anchor="middle">人手介入</text>
+ <text x="1210" y="492" fill="#94a3b8" font-size="10.5" text-anchor="middle">処理中の介入なし</text>
+ <text x="936" y="528" fill="#cbd5e1" font-size="11">注入の実測: 厳格な指示のエージェント 0/13（モデルが無視）</text>
+ <text x="936" y="546" fill="#cbd5e1" font-size="11">記録の指示に従うエージェント 8/8 が従い → 全て L2 が遮断</text>
+ <text x="936" y="566" fill="#94a3b8" font-size="10.5">＝全チームが良いプロンプトを書ける前提には立てない</text>
+ <text x="936" y="588" fill="#64748b" font-size="10">「ON突破0」は同一述語を共有する構造的帰結＝強制の検証であり、</text>
+ <text x="936" y="603" fill="#64748b" font-size="10">ポリシーが全脅威を網羅する証明ではない</text>
 
-  <rect x="850" y="292" width="206" height="150" rx="10" fill="#160b0b" stroke="#7f1d1d"/>
-  <text x="953" y="316" fill="#fca5a5" font-size="12" text-anchor="middle" font-weight="700">Governance OFF</text>
-  <text x="953" y="378" fill="#ff4d4f" font-size="48" text-anchor="middle" font-weight="800">＞0</text>
-  <text x="953" y="404" fill="#94a3b8" font-size="10.5" text-anchor="middle">実害が発生(非決定)</text>
-  <text x="953" y="424" fill="#94a3b8" font-size="10" text-anchor="middle">無承認返金/秘密が実際に外部へ</text>
+ <!-- arrows -->
+ <line x1="143" y1="196" x2="143" y2="205" stroke="#64748b" stroke-width="1.5" marker-end="url(#ar)"/>
+ <line x1="143" y1="282" x2="143" y2="291" stroke="#64748b" stroke-width="1.5" marker-end="url(#ar)"/>
+ <line x1="260" y1="340" x2="288" y2="300" stroke="#a78bfa" stroke-width="1.6" marker-end="url(#ar)"/>
+ <line x1="260" y1="460" x2="288" y2="420" stroke="#f59e0b" stroke-width="1.6" marker-end="url(#ar)"/>
+ <line x1="888" y1="300" x2="916" y2="200" stroke="#64748b" stroke-width="1.4" marker-end="url(#ar)"/>
+ <line x1="888" y1="470" x2="916" y2="330" stroke="#64748b" stroke-width="1.4" marker-end="url(#ar)"/>
 
-  <rect x="1070" y="292" width="206" height="150" rx="10" fill="#07160d" stroke="#14532d"/>
-  <text x="1173" y="316" fill="#86efac" font-size="12" text-anchor="middle" font-weight="700">Governance ON</text>
-  <text x="1173" y="378" fill="#22c55e" font-size="48" text-anchor="middle" font-weight="800">0</text>
-  <text x="1173" y="404" fill="#94a3b8" font-size="10.5" text-anchor="middle">突破0 · 誤検知0</text>
-  <text x="1173" y="424" fill="#c4b5fd" font-size="10" text-anchor="middle">3層が補完して捕捉</text>
-
-  <rect x="850" y="454" width="426" height="110" rx="10" fill="#0b1220" stroke="#334155"/>
-  <text x="866" y="476" fill="#e2e8f0" font-size="11.5" font-weight="700">「一方では守れない」= 3層の補完</text>
-  <text x="866" y="497" fill="#a78bfa" font-size="10.5">L1: 露骨なインジェクション/脱獄</text>
-  <text x="866" y="514" fill="#7dd3fc" font-size="10.5">L2: 一見まっとうな違反(高額返金・送金先改ざん)</text>
-  <text x="866" y="531" fill="#fcd34d" font-size="10.5">L3: 乗っ取られたコード実行(SAトークン窃取)</text>
-  <text x="866" y="551" fill="#64748b" font-size="9.5">各層が他層の穴を埋める。判定はLLMでなく計装の事実(決定的)。</text>
-
-  <!-- arrows -->
-  <line x1="176" y1="156" x2="208" y2="180" stroke="#64748b" stroke-width="1.5" marker-end="url(#ar)"/>
-  <line x1="176" y1="245" x2="208" y2="250" stroke="#64748b" stroke-width="1.3" marker-end="url(#ar)"/>
-  <line x1="176" y1="430" x2="228" y2="330" stroke="#64748b" stroke-width="1.3" marker-end="url(#ar)"/>
-  <line x1="800" y1="290" x2="832" y2="180" stroke="#64748b" stroke-width="1.3" marker-end="url(#ar)"/>
-
-  <!-- footer badges -->
-  <g font-size="11" font-weight="700">
-    <rect x="34" y="600" width="130" height="26" rx="8" fill="#0f172a" stroke="#a78bfa"/><text x="99" y="618" fill="#a78bfa" text-anchor="middle">Model Armor</text>
-    <rect x="176" y="600" width="184" height="26" rx="8" fill="#0f172a" stroke="#22c55e"/><text x="268" y="618" fill="#22c55e" text-anchor="middle">Gemini 3.5 · Vertex AI (global)</text>
-    <rect x="372" y="600" width="150" height="26" rx="8" fill="#0f172a" stroke="#f59e0b"/><text x="447" y="618" fill="#f59e0b" text-anchor="middle">Cloud Run Sandbox</text>
-    <rect x="534" y="600" width="92" height="26" rx="8" fill="#0f172a" stroke="#38bdf8"/><text x="580" y="618" fill="#38bdf8" text-anchor="middle">ADK</text>
-    <rect x="638" y="600" width="96" height="26" rx="8" fill="#0f172a" stroke="#f59e0b"/><text x="686" y="618" fill="#f59e0b" text-anchor="middle">Firestore</text>
-    <rect x="746" y="600" width="92" height="26" rx="8" fill="#0f172a" stroke="#a78bfa"/><text x="792" y="618" fill="#a78bfa" text-anchor="middle">Pub/Sub</text>
-  </g>
-  <text x="34" y="656" fill="#64748b" font-size="11">SOP→最小権限生成→艦隊登録→[L1 言語][L2 行動][L3 実行]の3層で防御→実ツールで実タスク完遂→全操作を監査→JA/EN通信簿。</text>
-</svg>
-</body></html>
+ <text x="30" y="648" fill="#94a3b8" font-size="12.5" font-weight="700">量が自動化を強制し、変化速度が自動検証を強制し、敵対的データが実行境界の強制を強制する。</text>
+ <text x="30" y="670" fill="#64748b" font-size="11">3.4M件を人が読む選択肢は無い / エージェントは日々書き換わる / データは顧客＝誰でも書ける</text>
+ <g font-size="11" font-weight="700">
+  <rect x="30" y="692" width="132" height="26" rx="8" fill="#0f172a" stroke="#22c55e"/><text x="96" y="710" fill="#22c55e" text-anchor="middle">Gemini 3.5 · Vertex</text>
+  <rect x="172" y="692" width="86" height="26" rx="8" fill="#0f172a" stroke="#38bdf8"/><text x="215" y="710" fill="#38bdf8" text-anchor="middle">ADK</text>
+  <rect x="268" y="692" width="110" height="26" rx="8" fill="#0f172a" stroke="#38bdf8"/><text x="323" y="710" fill="#38bdf8" text-anchor="middle">Cloud Run</text>
+  <rect x="388" y="692" width="104" height="26" rx="8" fill="#0f172a" stroke="#f59e0b"/><text x="440" y="710" fill="#f59e0b" text-anchor="middle">BigQuery</text>
+  <rect x="502" y="692" width="104" height="26" rx="8" fill="#0f172a" stroke="#f59e0b"/><text x="554" y="710" fill="#f59e0b" text-anchor="middle">Firestore</text>
+  <rect x="616" y="692" width="98" height="26" rx="8" fill="#0f172a" stroke="#a78bfa"/><text x="665" y="710" fill="#a78bfa" text-anchor="middle">Pub/Sub</text>
+  <rect x="724" y="692" width="128" height="26" rx="8" fill="#0f172a" stroke="#a78bfa"/><text x="788" y="710" fill="#a78bfa" text-anchor="middle">Model Armor</text>
+  <rect x="862" y="692" width="152" height="26" rx="8" fill="#0f172a" stroke="#f59e0b"/><text x="938" y="710" fill="#f59e0b" text-anchor="middle">Cloud Run Sandbox</text>
+ </g>
+</svg></body></html>
