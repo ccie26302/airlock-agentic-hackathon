@@ -2,6 +2,12 @@
 Track: **Fortified Enterprise Fleet** · *Individual project. Not affiliated with or endorsed by Google.*
 
 **Demo video:** https://youtu.be/3LaorTM5pgw  (live, unedited, English captions)
+The video is one continuous take of the deployed system. Two things landed after it was recorded and
+are visible live rather than on film: the Gemma fleet member (`/fleet` now lists five departments,
+the video shows four) and the duplicate-settlement check. Nothing in the video was superseded —
+except one on-screen label that read "gVisor", which is the gen1 execution environment; this runs
+gen2 and Google does not state the isolation used by `--sandbox-launcher`, so the label now says
+`--sandbox-launcher · egress blocked`. The measured result it sits next to is unchanged.
 **Repository:** https://github.com/ccie26302/airlock-agentic-hackathon
 **Live:** https://airlock-52kgcfrghq-uc.a.run.app/mission?lang=en
 

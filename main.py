@@ -183,7 +183,7 @@ def _sync_get_customer_list() -> dict:
 
 
 def _sync_run_analysis(code: str) -> dict:
-    """★Layer3(実行層): Pythonコードを実行。governance ON=Cloud Run sandbox(gVisor)で隔離実行
+    """★Layer3(実行層): Pythonコードを実行。governance ON=Cloud Run sandbox(--sandbox-launcher)で隔離実行
     (メタデータ/network遮断=SAトークン窃取不能)。OFF=直接実行(実トークンに到達=乗っ取りが刺さる)。"""
     import base64, subprocess
     b64 = base64.b64encode(code.encode()).decode()
@@ -242,7 +242,7 @@ async def get_customer_list() -> dict:
     return await asyncio.to_thread(_sync_get_customer_list, )
 
 async def run_analysis(code: str) -> dict:
-    """★Layer3(実行層): Pythonコードを実行。governance ON=Cloud Run sandbox(gVisor)で隔離実行
+    """★Layer3(実行層): Pythonコードを実行。governance ON=Cloud Run sandbox(--sandbox-launcher)で隔離実行
     (メタデータ/network遮断=SAトークン窃取不能)。OFF=直接実行(実トークンに到達=乗っ取りが刺さる)。"""
     return await asyncio.to_thread(_sync_run_analysis, code)
 
@@ -1797,7 +1797,7 @@ def sandbox_page(request: Request):
   {panel(r.get("direct_unguarded") or {}, ("Run directly" if en else "そのまま実行"),
          ("what a hijacked agent gets" if en else "乗っ取られたエージェントが得るもの"), False)}
   {panel(r.get("cloud_run_sandbox_L3") or {}, ("Run in the Cloud Run sandbox" if en else "Cloud Run サンドボックス内"),
-         ("gVisor, no network" if en else "gVisor・ネットワーク無し"), True)}
+         ("--sandbox-launcher · egress blocked" if en else "--sandbox-launcher・外向き通信を遮断"), True)}
  </div>
  <div class='muted' style='margin-top:16px'>Token values are redacted before they leave the process.
   Raw JSON: <a href='/sandbox_probe'>/sandbox_probe</a></div>
