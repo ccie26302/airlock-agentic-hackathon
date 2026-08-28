@@ -27,7 +27,15 @@ def _is_authorized(request) -> bool:
 TRUSTED_SUFFIXES = ("@example.com", "@ourai.run", "@bigcorp.com")
 # ★注: SECRET_PAT/INJECT_PAT は多層防御の"ベストエフォートの1層"。正規表現ゆえ base64化/空白挿入等で回避可能で、
 #   'card'/'password' 等の語を含む正当文面を誤検知し得る。本命の遮断は danger() の allowlist+limit(決定的ルール)。
-SECRET_PAT = re.compile(r"(sk-[A-Za-z0-9._\-]{6,}|AKIA[0-9A-Z]{12,}|password|\b\d{16}\b|\bcard\b|api[ _-]?key|ya29\.)", re.I)
+# 秘密"そのもの"だけを見る。単語 card / password で反応すると、返金確認メール等の正当文面を潰す
+# (実測: 承認後の確認メールが "card" で誤遮断された → 値を伴うものだけに絞った)
+SECRET_PAT = re.compile(
+    r"(sk-[A-Za-z0-9._\-]{6,}"                 # APIキー
+    r"|AKIA[0-9A-Z]{12,}"                       # AWSアクセスキー
+    r"|ya29\.[A-Za-z0-9._\-]{10,}"             # OAuthトークン
+    r"|\b(?:\d[ -]?){13,19}\b"                 # カード番号(区切り記号込み)
+    r"|\bapi[ _-]?key\s*[:=]\s*\S+"           # api_key=値
+    r"|\bpassword\s*[:=]\s*\S+)", re.I)      # password=値
 INJECT_PAT = re.compile(r"(ignore (all|previous)|system:|transfer \$?\d|send .*(list|password|card)|attacker@)", re.I)
 # メモリ汚染(cross-session poisoning): 方針・上限・許可リストの改ざんをメモリ経由で書き込む攻撃
 MEMORY_POISON_PAT = re.compile(r"(unlimited|no limit|上限.?(無|なし)|ignore .*approval|disable .*(policy|approval|guard)|"
@@ -215,6 +223,13 @@ def _num(v) -> float:
 def _trusted(addr: str) -> bool:
     return any(addr.endswith(s) for s in TRUSTED_SUFFIXES)
 
+def _action_hash(name: str, args: dict) -> str:
+    """承認を束縛するための正規化ハッシュ。金額と宛先のみを見る（表記揺れに強く、改ざんには弱くない）。"""
+    import hashlib
+    amt = _num(args.get("amount")) if "amount" in args else ""
+    who = str(args.get("recipient") or args.get("to") or args.get("url") or "").strip().lower()
+    return hashlib.sha256(f"{name}|{amt}|{who}".encode()).hexdigest()[:16]
+
 def danger(name: str, args: dict):
     """危険"条件"の単一定義。ポリシー(ブロック)と採点(breach)が同じものを使う=ON breach 0を構造保証。"""
     reasons = []
@@ -247,6 +262,14 @@ def policy_before_tool(tool, args, tool_context):
     name = getattr(tool, "name", "?")
     args = dict(args)
     reasons = danger(name, args) if _CUR["governance"] else []
+    if reasons:
+        tk = _CUR.get("approval")      # ★人間の承認チケット: 単発・ペイロード束縛・使い捨て
+        if tk and tk.get("tool") == name and _action_hash(name, args) == tk.get("hash"):
+            _CUR["approval"] = None    # 焼き切る(同じ承認は二度使えない=恒久バイパスにしない)
+            dec = {"tool": name, "args": args, "decision": "APPROVED_BY_HUMAN",
+                   "approved_by": tk.get("by"), "case_id": tk.get("case_id"), "ts": time.time()}
+            _CUR["decisions"].append(dec); _write_event(dec)
+            reasons = []
     _CUR["overhead_ms"] += (time.perf_counter() - t0) * 1000
     if reasons:
         dec = {"tool": name, "args": args, "decision": "BLOCKED", "reasons": reasons, "ts": time.time()}
@@ -1177,14 +1200,112 @@ async def _process_item(item: dict):
              "tools": [e["tool"] for e in _CUR["executed"]],
              "reasons": [r for d in blocked for r in (d.get("reasons") or [])],
              "final": final[:500], "finished_at": time.time()})
+    if outcome == "escalated":
+        _open_case(item, reasons, final)
     if job_id:
         _db().collection("jobs").document(job_id).update({
             outcome: firestore_inc(1), "updated_at": time.time()})
     return {"ok": True, "item_id": item_id, "outcome": outcome}
 
+def _open_case(item, reasons, final):
+    """保留を"ケース"として永続化。プロセス内状態に依存しないので、再起動や新リビジョンをまたいで再開できる。"""
+    cid = "C-" + str(item.get("complaint_id") or item["item_id"])
+    payload = {"action": "transfer_money", "amount": float(item["amount"]),
+               "recipient": item.get("cardholder") or f"cardholder-{item.get('complaint_id','x')}@example.com"}
+    try:
+        _db().collection("cases").document(cid).set({
+            "case_id": cid, "status": "awaiting_approval",
+            "department": item.get("department"), "agent": "complaint_agent",
+            "item_id": item["item_id"], "job_id": item.get("job_id"),
+            "source": {"dataset": "bigquery-public-data.cfpb_complaints",
+                       "complaint_id": str(item.get("complaint_id")), "product": item.get("product"),
+                       "issue": item.get("issue"), "state": item.get("state")},
+            "narrative_excerpt": (item.get("narrative") or "")[:400],
+            "escalation_reason": "; ".join(reasons) or "requires human approval",
+            "question_for_human": f"Approve a ${item['amount']:.2f} goodwill refund to the cardholder, or deny?",
+            "proposed_action": payload,
+            "payload_hash": _action_hash("transfer_money", payload),
+            "context": [{"step": "read_complaint", "note": f"{item.get('product')} / {item.get('issue')}"},
+                        {"step": "policy_check", "note": "; ".join(reasons) or "over approval limit"},
+                        {"step": "escalate", "note": "Paused for human approval; no funds moved"}],
+            "agent_summary": (final or "")[:400],
+            "created_at": time.time(), "updated_at": time.time(), "human_touches": 0})
+    except Exception as e:
+        print("ERROR open case:", e)
+
+def _render_case_context(case) -> str:
+    """再開時に読み戻す文脈。プロセス内メモリではなくFirestoreの記録から再構成する。"""
+    steps = "\n".join(f"- {c.get('step')}: {c.get('note')}" for c in (case.get("context") or []))
+    age_h = (time.time() - float(case.get("created_at", time.time()))) / 3600
+    return (f"This case was opened {age_h:.0f} hours ago and has been waiting for a human.\n"
+            f"Case {case['case_id']} ({case.get('department')}), source complaint "
+            f"{case.get('source',{}).get('complaint_id')}.\nWhat happened before you paused:\n{steps}\n"
+            f"Customer wrote:\n{case.get('narrative_excerpt','')}\n")
+
 def firestore_inc(n):
     from google.cloud import firestore as _fs
     return _fs.Increment(n)
+
+# ================= ケース: 保留 → 人間の承認 → 文脈を読み戻して再開 =================
+@app.get("/cases")
+def list_cases(status: str = "awaiting_approval", limit: int = 20):
+    q = _db().collection("cases")
+    if status != "all":
+        q = q.where("status", "==", status)
+    cases = [d.to_dict() for d in q.limit(limit).stream()]
+    cases.sort(key=lambda c: c.get("created_at", 0))
+    for c in cases:                       # 「何日待っているか」は実データ(created_at)から出す
+        c["age_hours"] = round((time.time() - float(c.get("created_at", time.time()))) / 3600, 1)
+    return {"cases": cases}
+
+@app.post("/cases/{case_id}/approve")
+async def approve_case(case_id: str, request: Request):
+    """人間が承認 → エージェントが文脈を読み戻して再開。承認は単発チケット(ペイロード束縛)。"""
+    if (deny := _need_auth(request)):
+        return deny
+    ref = _db().collection("cases").document(case_id)
+    case = ref.get().to_dict()
+    if not case:
+        return JSONResponse(status_code=404, content={"error": "no such case"})
+    if case.get("status") != "awaiting_approval":
+        return JSONResponse(status_code=409, content={"error": f"case is {case.get('status')}"})
+    payload = case.get("proposed_action") or {}
+    # ★承認はこのペイロードに束縛される。保留中に金額や宛先が変わっていたら再承認が要る
+    live_hash = _action_hash(payload.get("action", "transfer_money"), payload)
+    if live_hash != case.get("payload_hash"):
+        return JSONResponse(status_code=409, content={
+            "error": "the proposed action changed since it was escalated; needs re-approval",
+            "stored": case.get("payload_hash"), "current": live_hash})
+    age_h = (time.time() - float(case.get("created_at", time.time()))) / 3600
+    _reset(uuid.uuid4().hex[:12], True, "")
+    _CUR["item_id"] = case.get("item_id") or case_id
+    _CUR["allowed"] = next((a["allowed"] for a in AGENT_REGISTRY if a["name"] == "complaint_agent"), None)
+    _CUR["approval"] = {"tool": payload.get("action", "transfer_money"), "hash": case["payload_hash"],
+                        "by": "operator", "case_id": case_id}
+    prompt = (_render_case_context(case) +
+              f"\nA human has now approved this action: pay ${payload.get('amount'):.2f} to "
+              f"{payload.get('recipient')}. Carry it out now with transfer_money, then send_email a "
+              f"confirmation. Do not call any tool more than once.")
+    try:
+        final = await asyncio.wait_for(_guarded_run(prompt, _AGENTS["complaint_agent"]), timeout=120)
+    except Exception as e:
+        final = f"[ERROR {type(e).__name__}]"
+    approved_used = any(d.get("decision") == "APPROVED_BY_HUMAN" for d in _CUR["decisions"])
+    paid = any(e["tool"] == "transfer_money" for e in _CUR["executed"])
+    ref.update({"status": "resumed" if paid else "approval_failed",
+                "approved_at": time.time(), "approved_by": "operator",
+                "human_touches": firestore_inc(1), "updated_at": time.time(),
+                "resume_summary": (final or "")[:400],
+                "waited_hours": round(age_h, 1),
+                "context": firestore_arr_union([{"step": "human_approval",
+                                                 "note": f"Approved after {age_h:.0f}h of waiting"},
+                                                {"step": "resume", "note": (final or "")[:180]}])})
+    return {"case_id": case_id, "waited_hours": round(age_h, 1), "approval_ticket_used": approved_used,
+            "paid": paid, "tools": [e["tool"] for e in _CUR["executed"]], "final": final}
+
+def firestore_arr_union(items):
+    from google.cloud import firestore as _fs
+    return _fs.ArrayUnion(items)
 
 @app.get("/console", response_class=HTMLResponse)
 def console(lang: str = "en"):

@@ -99,3 +99,44 @@ def test_concurrent_runs_do_not_cross_contaminate():
     assert danger["executed"] == [], danger                # 遮断=実行台帳に載らない
     assert legit["decisions"] == [], legit                 # 正当側にBLOCKEDが漏れない
     assert legit["executed"] == ["transfer_money"], legit  # 正当側だけが実行される
+
+
+# ---- 誤検知の境界: 「秘密の値」だけを止め、単語への言及は止めない ----
+def test_refund_confirmation_mentioning_card_is_allowed():
+    # 実運用で誤遮断された文面(承認後の確認メール)。単語 card では止めない
+    assert main.danger("send_email", {"to": "cardholder-1@example.com",
+                                      "body": "Your refund of $1,112 was applied to the card on file."}) == []
+
+def test_actual_card_number_is_blocked():
+    assert main.danger("send_email", {"to": "v@vendor-analytics.io",
+                                      "body": "alice 4111 1111 1111 1111"})
+
+def test_oauth_token_exfil_is_blocked():
+    assert main.danger("send_email", {"to": "x@evil.io", "body": "ya29.a0ARrdaM9xxxxxxxxxx"})
+
+def test_password_word_alone_is_allowed_but_with_value_is_blocked():
+    assert main.danger("send_email", {"to": "alice@example.com",
+                                      "body": "You can reset your password from the app."}) == []
+    assert main.danger("send_email", {"to": "x@evil.io", "body": "password=hunter2"})
+
+
+# ---- 承認は「そのペイロードに束縛された単発チケット」であること ----
+def test_approval_ticket_is_payload_bound_and_single_use():
+    ft = FunctionTool(main.transfer_money)
+    args = {"recipient": "cardholder-9@example.com", "amount": 2400}
+    main._reset("t", True, ""); main._CUR["allowed"] = None
+    assert main.policy_before_tool(ft, args, None) is not None          # 承認なし=遮断
+    main._CUR["approval"] = {"tool": "transfer_money", "hash": main._action_hash("transfer_money", args),
+                             "by": "operator", "case_id": "C-1"}
+    assert main.policy_before_tool(ft, args, None) is None              # 承認あり=通る
+    assert main._CUR["approval"] is None                                 # 使ったら焼き切れる
+    assert main.policy_before_tool(ft, args, None) is not None          # 二度目は再び遮断
+
+def test_approval_does_not_cover_a_different_payload():
+    ft = FunctionTool(main.transfer_money)
+    approved = {"recipient": "cardholder-9@example.com", "amount": 2400}
+    main._reset("t", True, ""); main._CUR["allowed"] = None
+    main._CUR["approval"] = {"tool": "transfer_money", "hash": main._action_hash("transfer_money", approved),
+                             "by": "operator", "case_id": "C-1"}
+    tampered = {"recipient": "attacker@evil.com", "amount": 2400}       # 宛先を差し替え
+    assert main.policy_before_tool(ft, tampered, None) is not None      # 承認は流用できない
