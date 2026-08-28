@@ -1583,7 +1583,8 @@ def fleet(lang: str = "en"):
  <div style='display:flex;justify-content:space-between;align-items:baseline'>
   <div><span style='font-size:22px;font-weight:800'>🛰 Airlock</span>
    <span class='muted' style='margin-left:10px'>{T['title']} — {T['sub']}</span></div>
-  <div class='muted'><a href='/mission?lang={lang}'>Mission</a> · <a href='/dashboard?lang={lang}'>Governance</a>
+  <div class='muted'><a href='/mission?lang={lang}'>Mission</a> · <a href='/sandbox?lang={lang}'>Sandbox</a>
+   · <a href='/dashboard?lang={lang}'>Governance</a>
    · <a href='/fleet?lang={"ja" if en else "en"}'>{"日本語" if en else "English"}</a></div>
  </div>
  <div class='card'>
@@ -1596,6 +1597,66 @@ def fleet(lang: str = "en"):
   <div class='muted' style='margin-top:8px'>JSON: <a href='/console_agents?lang={lang}'>/console_agents</a>
    · <a href='/ci'>/ci</a></div>
  </div>
+</body></html>""")
+
+@app.get("/sandbox", response_class=HTMLResponse)
+def sandbox_page(request: Request):
+    """L3の性質を1画面で見せる。同じコードを2通りで実行した結果を並べる(LLM非依存)。
+    JSONは /sandbox_probe。ここも同じ上限の内側(実際にコードを2回実行するため)。"""
+    en = request.query_params.get("lang", "en") != "ja"
+    if not _is_authorized(request) and not _rate_ok("probe", PROBE_LIMIT_PER_HOUR):
+        return HTMLResponse(f"<body style='background:#020617;color:#94a3b8;font-family:system-ui;padding:40px'>"
+                            f"hourly limit for anonymous use reached ({PROBE_LIMIT_PER_HOUR}/hour) — this page "
+                            f"executes code on every load.</body>", status_code=429)
+    r = sandbox_probe_result()
+    def panel(d, title, sub, good):
+        leaked = d.get("leaked_sa_token")
+        col = "#22c55e" if good else "#ef4444"
+        verdict = (("credential stolen" if en else "認証情報を盗まれた") if leaked
+                   else ("nothing to steal" if en else "盗めるものが無い"))
+        def row(k, v, bad_when):
+            c = "#ef4444" if v is bad_when else "#22c55e"
+            return (f"<div style='display:flex;justify-content:space-between;padding:7px 0;"
+                    f"border-bottom:1px solid #16233c'><span class='muted'>{k}</span>"
+                    f"<b style='color:{c}'>{str(v).lower()}</b></div>")
+        err = (d.get("stderr_head") or "").strip()
+        return f"""<div style='flex:1;min-width:330px;background:#0f172a;border:2px solid {col};
+             border-radius:14px;padding:18px'>
+          <div style='color:{col};font-weight:800;font-size:16px'>{title}</div>
+          <div class='muted' style='margin:4px 0 14px'>{sub}</div>
+          {row("SA access token read", bool(leaked), True)}
+          {row("network reachable", not d.get("network_blocked"), True)}
+          {row("contained", bool(d.get("contained")), False)}
+          <div style='margin-top:14px;color:{col};font-weight:700'>{verdict}</div>
+          {f"<pre style='margin-top:10px;color:#64748b;font-size:11px;white-space:pre-wrap'>{err[:150]}</pre>" if err else ""}
+        </div>"""
+    t = ("The same code, run two ways" if en else "同じコードを、2通りで実行した")
+    sub = ("A fixed script — no model involved — reads this service's own credential from the metadata "
+           "server and prints it. Left: run the way a hijacked agent would run it. Right: run inside the "
+           "Cloud Run sandbox. Nothing about the code changes."
+           if en else "固定スクリプト(モデル非関与)がメタデータサーバから自分の資格情報を読んで出力する。"
+                      "左=乗っ取られたエージェントと同じ実行。右=Cloud Run サンドボックス内。コードは同一。")
+    return HTMLResponse(f"""<!doctype html><html><head><meta charset='utf-8'>
+<title>Airlock — Sandbox</title><style>
+ body{{margin:0;background:#020617;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;padding:22px}}
+ .muted{{color:#64748b;font-size:12.5px}} a{{color:#38bdf8}}
+</style></head><body>
+ <div style='display:flex;justify-content:space-between;align-items:baseline'>
+  <div><span style='font-size:22px;font-weight:800'>🛰 Airlock</span>
+   <span class='muted' style='margin-left:10px'>Layer 3 — {t}</span></div>
+  <div class='muted'><a href='/mission?lang={"en" if en else "ja"}'>Mission</a>
+   · <a href='/fleet?lang={"en" if en else "ja"}'>Fleet</a>
+   · <a href='/sandbox?lang={"ja" if en else "en"}'>{"日本語" if en else "English"}</a></div>
+ </div>
+ <div class='muted' style='margin:14px 0 16px;max-width:900px'>{sub}</div>
+ <div style='display:flex;gap:16px;flex-wrap:wrap'>
+  {panel(r.get("direct_unguarded") or {}, ("Run directly" if en else "そのまま実行"),
+         ("what a hijacked agent gets" if en else "乗っ取られたエージェントが得るもの"), False)}
+  {panel(r.get("cloud_run_sandbox_L3") or {}, ("Run in the Cloud Run sandbox" if en else "Cloud Run サンドボックス内"),
+         ("gVisor, no network" if en else "gVisor・ネットワーク無し"), True)}
+ </div>
+ <div class='muted' style='margin-top:16px'>Token values are redacted before they leave the process.
+  Raw JSON: <a href='/sandbox_probe'>/sandbox_probe</a></div>
 </body></html>""")
 
 @app.get("/cases")
@@ -1727,6 +1788,7 @@ def mission(lang: str = "en"):
    <span class='muted' style='margin-left:10px'>{T['sub']}</span></div>
   <div class='muted'><a href='/console?lang={"en" if en else "ja"}' style='color:#38bdf8'>Console</a>
    · <a href='/fleet?lang={"en" if en else "ja"}' style='color:#38bdf8'>Fleet</a>
+   · <a href='/sandbox?lang={"en" if en else "ja"}' style='color:#38bdf8'>Sandbox</a>
    · <a href='/dashboard?lang={"en" if en else "ja"}' style='color:#38bdf8'>Governance</a>
    · <a href='/mission?lang={"ja" if en else "en"}' style='color:#38bdf8'>{"日本語" if en else "English"}</a></div>
  </div>

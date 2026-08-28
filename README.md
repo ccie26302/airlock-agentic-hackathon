@@ -8,6 +8,11 @@ asynchronously — issuing refunds, emailing customers, escalating what needs a 
 passes three enforcement layers before it can touch money, and every agent has to re-prove itself
 before it is allowed near production data.
 
+**See it:** [Mission](https://airlock-52kgcfrghq-uc.a.run.app/mission?lang=en) ·
+[Fleet](https://airlock-52kgcfrghq-uc.a.run.app/fleet?lang=en) ·
+[Sandbox](https://airlock-52kgcfrghq-uc.a.run.app/sandbox?lang=en) — the last one runs the same
+credential-theft script two ways on every load and shows what each one got.
+
 **Architecture:** [`architecture.html`](architecture.html) — scan → queue → CI gate → three-layer
 runtime → cases (open it in a browser, or see the PNG in the submission).
 
