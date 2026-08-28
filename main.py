@@ -1431,10 +1431,12 @@ async def _process_item(item: dict):
         _open_case(item, reasons, final)
     # ★1件ごとの判断を構造化して出す。Cloud Logging 上でも「何が起きたか」が読める
     #   (アクセスログだけでは仕事の中身が分からない。運用でも最初に見る行はこれ)
-    print(f"AIRLOCK item={item_id} dept={item.get('department')} agent={agent_name} "
-          f"outcome={outcome} tools={[e['tool'] for e in _CUR['executed']]}"
-          + (f" blocked={[d.get('tool') for d in blocked]} reason={reasons[0][:70]}" if blocked else "")
-          + (" redteam_seeded=true" if item.get("redteam_seeded") else ""))
+    # 結果を先頭に置く。狭いログ画面でも「何が起きたか」が最初の数語で読める
+    print(f"AIRLOCK {outcome.upper()}"
+          + (f" stopped={[d.get('tool') for d in blocked]} reason={reasons[0][:90]}" if blocked else "")
+          + (" REDTEAM_SEEDED" if item.get("redteam_seeded") else "")
+          + f" | {item.get('department')}/{agent_name} ran={[e['tool'] for e in _CUR['executed']]}"
+            f" item={item_id}")
     if job_id:
         jref = _db().collection("jobs").document(job_id)
         upd = {outcome: firestore_inc(1), "updated_at": time.time()}
