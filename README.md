@@ -60,9 +60,11 @@ POST /jobs → BigQuery scan (3.4M rows, 1.7GB) → exceptions → Pub/Sub → w
 - Outcomes are `completed` / `escalated` (legitimate but over the approval limit) / `blocked` (unsafe
   action stopped) / `quarantined` (agent not verified) / `failed`.
 
-**Measured, unattended:** 200 items in **78s, 0 failed** (warm workers). Job submission ~3–5s
-including a real scan of **3,458,906 rows / 1,745MB**. Outcomes: 191 completed, 5 escalated to a
-human, **4 blocked (all four seeded injection attempts, 0 false positives)**.
+**Measured, unattended** — the run in the demo video, `J-6bf4dfc5d2`: 200 items in **60s, 0 failed**
+(warm workers). Job submission ~3–5s including a real scan of **3,458,906 rows / 1,830MB**. Outcomes:
+193 completed, 5 escalated to a human, **2 blocked (both seeded injection attempts, 0 false
+positives)**. Every number quoted below comes from that same run; a different run gives different
+numbers, and saying which one it was is the only way that means anything.
 
 ### Scored against what the company actually did
 
@@ -73,9 +75,9 @@ decision is checkable — and the agent never sees it. Measured on the run above
 | | |
 |---|---|
 | Recall — real remediations the agent caught | **94% (65/69)** |
-| Precision | **39%** |
+| Precision | **41%** |
 | A constant "explanation only" answer would agree | **65%** |
-| Raw agreement of the agent | **52%** |
+| Raw agreement of the agent | **50%** |
 
 **Read that honestly: on raw agreement this agent loses to answering "explanation only" every time.**
 It is a high-recall triage filter — it catches almost everything that turned out to need action, and
@@ -99,7 +101,7 @@ the size this runs comfortably; going higher is a concurrency and quota exercise
 |---|---|---|
 | **L1 language** | Google Model Armor (`sanitizeUserPrompt`, threshold HIGH) | Overt prompt injection / jailbreak |
 | **L2 action** | Deterministic policy in ADK `before_tool_callback` | Over-limit payments, redirected payees, secrets leaving, memory poisoning |
-| **L3 execution** | Cloud Run sandbox (gVisor, `--sandbox-launcher`) | Hijacked code — the network does not exist inside, so credentials cannot leave |
+| **L3 execution** | Cloud Run sandbox (`--sandbox-launcher`, gen2) | Hijacked code — the network does not exist inside, so credentials cannot leave |
 
 ### A measurement that changed the design
 
@@ -177,10 +179,13 @@ behaviour and is what you see in the CI table.
 **Where it runs.** Cloud Run GPU is the better home for this — it scales to zero, so the GPU costs
 nothing between runs — and `gemma/` holds the Ollama image and `deploy.sh` for exactly that. This
 project is refused Cloud Run GPU on quota grounds — both L4 pools, and with the correct flag set
-including `--no-cpu-throttling`. The quota APIs return no readable number for those metrics, so
-"refused" is what can be claimed rather than "zero"; it is requestable at `g.co/cloudrun/gpu-quota`.
-The live one is therefore a Vertex AI endpoint on an L4, which does not scale to zero. That is a cost
-decision, stated rather than hidden.
+including `--no-cpu-throttling`. A different project of mine had L4 quota by default, without ever
+requesting it; GPU quota is per project, and this one is a year older. "Refused" is what can be
+claimed rather than "zero" — the quota APIs return no readable number for those metrics.
+The live one is therefore a Vertex AI endpoint on an L4. As deployed — Model Garden's default, a
+dedicated endpoint with `min_replica_count` at 1 — it does not scale to zero and bills continuously.
+Vertex does support scale-to-zero on dedicated endpoints (`min_replica_count: 0`, v1beta1); this
+deployment simply does not use it. Stated rather than hidden, because it is a real bill.
 
 ## Departments: a catalog with handoffs, not a list
 

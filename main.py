@@ -511,7 +511,7 @@ AGENT_REGISTRY = [
      "allowed": ["get_customer_list", "http_post", "run_analysis"]},
     # ★Gemini ではないモデル。指示もツールもコールバックも ticket_agent と同一で、違いはモデルだけ。
     #   強制がツール境界にあるなら、モデルを替えても同じように止まるはず — それを測るために置く。
-    {"name": "gemma_intake_agent", "desc": "受付トリアージ(Gemma 3 on Cloud Run GPU)",
+    {"name": "gemma_intake_agent", "desc": "受付トリアージ(Gemma 3 / Vertex AI エンドポイント L4)",
      "art": "SOP: チケット処理", "allowed": ["transfer_money", "send_email"]},
 ]
 # 部門カタログ。エージェント一覧ではなく「誰が何をやれて、やれない時どこへ渡すか」を持つ。
@@ -526,7 +526,12 @@ DEPARTMENTS = {
 def _dept_agent(dept: str) -> str:
     return (DEPARTMENTS.get(dept) or {}).get("agent") or "complaint_agent"
 def _agent_model_label(name: str) -> str:
-    return f"Gemma 3 · Cloud Run GPU" if name == "gemma_intake_agent" else MODEL
+    """指紋に入る値。★固定文字列にしてはいけない: エンドポイントを別モデルに向け替えても
+    ラベルが変わらなければ指紋も変わらず、過去のCI合格がそのまま生き残る
+    （モデルを指紋に入れた修正が、ラベルのハードコードで骨抜きになっていた）。"""
+    if name != "gemma_intake_agent":
+        return MODEL
+    return f"{GEMMA_SERVED_MODEL}@vertex:{GEMMA_ENDPOINT}" if GEMMA_ENDPOINT else "gemma(unconfigured)"
 
 def _agent_allowed(name: str):
     return next((a["allowed"] for a in AGENT_REGISTRY if a["name"] == name), None)
@@ -1243,7 +1248,8 @@ def ci_overview():
 
 # ================= 非同期ジョブ: 340万件を走査 → 例外を無人処理 =================
 WORK_TOPIC = os.environ.get("WORK_TOPIC", "airlock-work")
-PUSH_SA = os.environ.get("PUSH_SA", "")          # push subscription の呼び出し元SA
+PUSH_SA = os.environ.get("PUSH_SA", "")
+PUSH_AUDIENCE = os.environ.get("PUSH_AUDIENCE", "")   # push先URL。指定時は audience も検証          # push subscription の呼び出し元SA
 _BQ = None
 def _bq():
     global _BQ
@@ -1336,16 +1342,20 @@ def list_jobs(limit: int = 10):
     return {"jobs": [d.to_dict() for d in docs]}
 
 def _verify_push(req: Request) -> bool:
-    """Pub/Sub push の OIDC を検証(audience と呼び出し元SAを確認)。"""
+    """Pub/Sub push の OIDC を検証。呼び出し元SAに加えて audience も確認する。
+    ★以前は PUSH_SA 未設定で素通り(fail-open)していた。fail-closed を掲げている以上、
+      設定漏れは「通す」ではなく「落とす」が正しい。"""
     if not PUSH_SA:
-        return True                                  # 未設定時(ローカル/初期検証)は素通り
+        print("push auth: PUSH_SA unset — refusing (fail-closed)")
+        return False
     auth = req.headers.get("authorization", "")
     if not auth.startswith("Bearer "):
         return False
     try:
         from google.oauth2 import id_token
         from google.auth.transport import requests as grequests
-        claims = id_token.verify_oauth2_token(auth.split()[1], grequests.Request())
+        aud = PUSH_AUDIENCE or None      # 指定があれば audience も検証する
+        claims = id_token.verify_oauth2_token(auth.split()[1], grequests.Request(), audience=aud)
         return claims.get("email") == PUSH_SA and claims.get("email_verified", False)
     except Exception as e:
         print("push auth failed:", e)

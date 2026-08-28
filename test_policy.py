@@ -284,3 +284,30 @@ def test_fingerprint_changes_when_the_model_changes():
     finally:
         main._agent_model_label = orig
     assert main._agent_fingerprint("ticket_agent") == a
+
+
+# ---- モデルラベルは実際の設定から組まれること（指紋の骨抜き防止） ----
+def test_gemma_model_label_tracks_the_endpoint():
+    """ラベルを固定文字列にすると、別モデルのエンドポイントへ向け替えても指紋が変わらず、
+    過去のCI合格が生き残る。モデルを指紋に入れた修正が骨抜きになっていた実バグ。"""
+    orig_ep, orig_m = main.GEMMA_ENDPOINT, main.GEMMA_SERVED_MODEL
+    try:
+        main.GEMMA_ENDPOINT, main.GEMMA_SERVED_MODEL = "ep-one", "google/gemma-3-4b-it"
+        a = main._agent_model_label("gemma_intake_agent")
+        main.GEMMA_ENDPOINT = "ep-two"                    # 別エンドポイントに向け替え
+        assert main._agent_model_label("gemma_intake_agent") != a
+        main.GEMMA_ENDPOINT, main.GEMMA_SERVED_MODEL = "ep-one", "google/gemma-3-27b-it"
+        assert main._agent_model_label("gemma_intake_agent") != a   # 別モデルでも変わる
+    finally:
+        main.GEMMA_ENDPOINT, main.GEMMA_SERVED_MODEL = orig_ep, orig_m
+
+def test_push_verification_is_fail_closed_without_config():
+    """PUSH_SA 未設定は「通す」ではなく「落とす」。"""
+    class _Req:
+        headers = {"authorization": "Bearer whatever"}
+    orig = main.PUSH_SA
+    try:
+        main.PUSH_SA = ""
+        assert main._verify_push(_Req()) is False
+    finally:
+        main.PUSH_SA = orig

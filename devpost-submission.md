@@ -26,12 +26,12 @@ Monday is not the agent running on Thursday.
   LLMs never touch all 3.4M rows — only the exceptions.
 - **Works them unattended.** Each exception is a Pub/Sub message consumed by a **private** Cloud Run
   service. Agents read the complaint, decide, issue the refund, email the customer, or escalate.
-  Measured: **200 items in 78 seconds, 0 failed, 0 human interventions during the run** —
-  191 completed, 5 escalated to a human, 4 blocked. What is handed to a person is handed on purpose:
+  Measured: **200 items in 60 seconds, 0 failed, 0 human interventions during the run** —
+  193 completed, 5 escalated to a human, 2 blocked. What is handed to a person is handed on purpose:
   the number worth reporting is not how few humans it needs but where it decides it needs one.
 - **Scores its own agents against reality.** CFPB records what each company actually did about each
   complaint. The agents decide the same thing without ever seeing that answer, so the decision is
-  checkable: **94% recall, 39% precision — and 52% raw agreement against a 65% baseline you would get
+  checkable: **94% recall, 41% precision — and 50% raw agreement against a 65% baseline you would get
   by answering "explanation only" every time.** This agent is a high-recall triage filter, not a
   decision-maker, and the dashboard says that rather than showing one flattering number.
 - **Routes across departments by permission, not by label.** Support has no payment tool, so when it
