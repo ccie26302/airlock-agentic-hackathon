@@ -197,3 +197,39 @@ def test_blocked_decision_records_the_tool_that_was_stopped():
     assert [d["tool"] for d in blocked] == ["send_email"]              # 止めたのはメール
     assert [e["tool"] for e in main._CUR["executed"]] == ["transfer_money"]  # 送金は実行済み
     # この2つを混ぜて「transfer_money を実行前に阻止した」と表示してはならない
+
+
+# ---- 部門カタログ: 権限の無い部門は自分で解決せず、実行できる部門へ引き渡す ----
+def test_support_department_has_no_payment_tool():
+    assert "transfer_money" not in main._agent_allowed("support_agent")
+    assert "transfer_money" in main._agent_allowed("refund_agent")
+
+def test_department_routing_is_from_the_catalog():
+    assert main._dept_agent("Claims") == "ticket_agent"
+    assert main._dept_agent("Customer Ops") == "complaint_agent"
+    assert main._dept_agent("Support") == "support_agent"
+    assert main._dept_agent("Finance") == "refund_agent"
+    assert main._dept_agent("Nonexistent Dept") == "complaint_agent"   # 未知の部門は最小構成へ
+
+def test_support_hands_off_to_finance_but_others_do_not():
+    assert main.DEPARTMENTS["Support"]["hands_off_to"] == "Finance"
+    assert main.DEPARTMENTS["Claims"]["hands_off_to"] is None
+    # 引き継ぎ先は送金を実行できる部門でなければ意味がない
+    assert "transfer_money" in main._agent_allowed(main._dept_agent("Finance"))
+
+
+# ---- 会社の実処理の読み取り: 部分文字列で非金銭を金銭と数えない ----
+def test_non_monetary_relief_is_not_counted_as_monetary():
+    money, remediation = main._classify_actual("Closed with non-monetary relief")
+    assert money is False          # ここが True になるのが実際に起きたバグ
+    assert remediation is True     # 是正はしている
+
+def test_monetary_relief_is_counted_as_both():
+    assert main._classify_actual("Closed with monetary relief") == (True, True)
+
+def test_explanation_only_is_neither():
+    assert main._classify_actual("Closed with explanation") == (False, False)
+
+def test_unknown_or_missing_outcome_is_neither():
+    for v in ("", None, "Untimely response", "In progress", "Closed"):
+        assert main._classify_actual(v) == (False, False)

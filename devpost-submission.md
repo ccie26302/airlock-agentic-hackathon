@@ -22,9 +22,18 @@ Monday is not the agent running on Thursday.
   LLMs never touch all 3.4M rows — only the exceptions.
 - **Works them unattended.** Each exception is a Pub/Sub message consumed by a **private** Cloud Run
   service. Agents read the complaint, decide, issue the refund, email the customer, or escalate.
-  Measured: **200 items in 49 seconds, 0 failed, 0 human interventions during the run** —
-  141 completed, 57 escalated to a human, 2 blocked. About 28% is handed to a person, on purpose:
+  Measured: **200 items in 78 seconds, 0 failed, 0 human interventions during the run** —
+  191 completed, 5 escalated to a human, 4 blocked. What is handed to a person is handed on purpose:
   the number worth reporting is not how few humans it needs but where it decides it needs one.
+- **Scores its own agents against reality.** CFPB records what each company actually did about each
+  complaint. The agents decide the same thing without ever seeing that answer, so the decision is
+  checkable: **94% recall, 39% precision — and 52% raw agreement against a 65% baseline you would get
+  by answering "explanation only" every time.** This agent is a high-recall triage filter, not a
+  decision-maker, and the dashboard says that rather than showing one flattering number.
+- **Routes across departments by permission, not by label.** Support has no payment tool, so when it
+  decides money is owed it cannot act: it opens a case addressed to Finance, and approval resumes the
+  work under Finance's agent, with that agent's permissions and its own CI pass. Measured: 30 Support
+  items → 26 explanations, 4 handed to Finance.
 - **Enforces in three layers.** Model Armor screens the language; a deterministic policy stops
   dangerous tool calls *before they execute*; a Cloud Run sandbox contains code execution so a
   hijacked agent cannot exfiltrate credentials — the network does not exist inside it.
@@ -81,6 +90,13 @@ scale; Firestore holds state, cases and the audit trail; Model Armor screens lan
   them "prevented before execution". On items where the refund went through and only the confirmation
   email was stopped, it claimed the platform had prevented the payment. It now reports what was
   stopped and what had already run — and hands the half-finished item to a person.
+
+## The metric that was wrong
+"Closed with non-monetary relief" contains "monetary relief" as a substring. My first accuracy number
+counted 63 non-monetary dispositions as monetary and looked far better than the truth. I found it by
+printing the confusion matrix instead of the headline. The corrected number is worse and is the one
+above; the classifier is now a named function with tests, because that is the class of bug that
+survives right up until someone asks a question on camera.
 
 ## What I learned
 Enforcement belongs where the money moves, not in the prompt. And the honest version of a security

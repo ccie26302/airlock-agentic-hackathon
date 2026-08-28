@@ -41,13 +41,33 @@ POST /jobs → BigQuery scan (3.4M rows, 1.7GB) → exceptions → Pub/Sub → w
 - Outcomes are `completed` / `escalated` (legitimate but over the approval limit) / `blocked` (unsafe
   action stopped) / `quarantined` (agent not verified) / `failed`.
 
-**Measured, unattended:** 200 items in **49s, 0 failed** (warm workers; ~103s from cold). 50 items in
-39s. Job submission ~3–5s including the scan of 3,458,906 rows / 1.66GB.
+**Measured, unattended:** 200 items in **78s, 0 failed** (warm workers). Job submission ~3–5s
+including a real scan of **3,458,906 rows / 1,745MB**. Outcomes: 191 completed, 5 escalated to a
+human, **4 blocked (all four seeded injection attempts, 0 false positives)**.
 
-**Measured on the same run — what the enforcement layer actually did:** 141 completed, 57 escalated,
-**2 blocked, 0 false positives.** Both blocks were seeded injection attempts caught at
-`transfer_money` *before* it executed; the third seeded item was stopped earlier by the approval
-limit. Getting to 0 false positives took a real fix — see below.
+### Scored against what the company actually did
+
+The agents decide whether a complaint needs the company to act or whether an explanation is enough.
+CFPB records the disposition the company really reached on every one of these complaints, so that
+decision is checkable — and the agent never sees it. Measured on the run above, 197 items scored:
+
+| | |
+|---|---|
+| Recall — real remediations the agent caught | **94% (65/69)** |
+| Precision | **39%** |
+| A constant "explanation only" answer would agree | **65%** |
+| Raw agreement of the agent | **52%** |
+
+**Read that honestly: on raw agreement this agent loses to answering "explanation only" every time.**
+It is a high-recall triage filter — it catches almost everything that turned out to need action, and
+pays for it by flagging about twice as many as it should. For a stage that feeds human review that is
+the right direction to be wrong in, but it is not a decision-maker, and the dashboard says so instead
+of showing a single flattering percentage.
+
+Tightening the criterion (require evidence the company was at fault) moved it to 24% recall / 62%
+agreement — still under the 65% baseline, with precision stuck near 40% either way. So the signal is
+weak, not mis-tuned. That is worth knowing *before* pointing an agent at 3.4M rows, and it is the kind
+of thing a platform should measure rather than assert.
 
 **Capacity, honestly:** 500 items in one job exceeds what this configuration sustains — Vertex starts
 rate-limiting, the worker returns 503, and Pub/Sub's flow control throttles delivery to a trickle.
@@ -106,6 +126,25 @@ Measured across the fleet: `refund_agent` reaches **3** unsafe actions unguarded
 labelled `enforcement_exercised: false`, and the report says plainly that the zero-breach result
 proves that agent's caution, not this platform's. A green check that cannot distinguish those two
 cases is the thing worth distrusting.
+
+## Departments: a catalog with handoffs, not a list
+
+`DEPARTMENTS` maps each department to the agent that works it **and to where it hands off when it
+cannot finish**. Support genuinely has no `transfer_money` tool. So when it decides a complaint needs
+money back, it cannot resolve it and must not promise it:
+
+```
+Support (support_agent, no payment rights)
+  → decides relief is warranted → cannot act → opens a case addressed to Finance
+  → a human approves → Finance's refund_agent resumes it, under its own permissions and its own CI pass
+```
+
+Measured live: a 30-item Support job produced 26 explanations and **4 cases handed to Finance**, each
+recording who raised it and who owns it. Approving one executed the refund under `refund_agent` —
+the agent that has the tool — not under the one that raised it.
+
+The boundary is a permission, not a label: the handoff happens because `support_agent`'s tool list
+does not contain `transfer_money`, and the resume path re-checks the receiving agent's CI state.
 
 ## Cases: work that outlives the process
 
@@ -261,6 +300,12 @@ CI fingerprint invalidation.
   did. Detection now requires an actual issuer prefix *and* Luhn. Re-measured on a fresh 200-item run:
   **24 false positives → 0**, with the seeded attacks still caught. Regression tests pin both sides.
 - **The payment gateway is simulated.** The ledger, outbox, outbound HTTP and code execution are real.
+  The refund *amount* is synthetic too. What is not synthetic is the disposition the agent is scored
+  against: that comes from the dataset, and the agent never sees it.
+- **A metric of mine was wrong, and the fix changed the story.** "Closed with non-monetary relief"
+  contains "monetary relief" as a substring, so a naive membership test counted 63 non-monetary
+  outcomes as monetary and reported a much healthier number than was real. `_classify_actual` and its
+  tests exist because of that.
 - **`--sandbox-launcher` is a preview feature**; where it is unavailable, L3 degrades gracefully and
   L1/L2 still enforce.
 - **Cases here are days old, not weeks.** What actually has to be true for week-scale continuity is
