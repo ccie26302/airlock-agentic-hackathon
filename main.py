@@ -1672,7 +1672,12 @@ def mission(lang: str = "en"):
          "blocked": "Unsafe actions stopped" if en else "阻止した危険な操作",
          "done": "completed" if en else "自動完了", "esc": "escalated" if en else "承認待ち",
          "blk": "blocked" if en else "遮断", "fail": "failed" if en else "失敗",
-         "approve": "Approve" if en else "承認"}
+         "approve": "Approve" if en else "承認",
+         "signin": "Sign in" if en else "サインイン",
+         "signin_ph": "operator token (asked once)" if en else "運用トークン(最初の1回だけ)",
+         "signed": "signed in as operator" if en else "operator としてサインイン中",
+         "signout": "sign out" if en else "サインアウト",
+         "readonly": "read-only — sign in to run and approve" if en else "閲覧のみ — 実行と承認にはサインイン"}
     return HTMLResponse(f"""<!doctype html><html><head><meta charset='utf-8'><title>Airlock — Mission Control</title>
 <style>
  body{{margin:0;background:#020617;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;padding:22px}}
@@ -1715,7 +1720,9 @@ def mission(lang: str = "en"):
    </div>
   </div>
   <div class='row' style='margin-top:14px'>
-   <input id='tok' placeholder='operator token' style='width:250px'>
+   <span id='who'></span>
+   <input id='tok' placeholder='{T['signin_ph']}' style='width:240px;display:none'>
+   <button id='signin' onclick='signIn()' style='display:none;padding:8px 14px;font-size:13px'>{T['signin']}</button>
    <input id='n' value='50' style='width:70px'> <span class='muted'>items</span>
    &nbsp;<select id='dept' style='background:#0b1220;color:#e5e7eb;border:1px solid #1f2937;border-radius:6px;padding:5px'>
      <option value='Claims'>Claims</option><option value='Customer Ops'>Customer Ops</option>
@@ -1764,7 +1771,28 @@ async function attach(jid){{
   if(timer) clearInterval(timer);
   timer=setInterval(poll,1500); poll();
 }}
-function hdrs(){{const h={{'Content-Type':'application/json'}};const t=document.getElementById('tok').value.trim();if(t)h['X-Airlock-Token']=t;return h;}}
+// 運用トークンはこのブラウザが覚える(このオリジンのlocalStorage)。毎回貼らせるのは基盤のUIではない。
+const TOKKEY='airlock.operator.token';
+function tok(){{ try{{return localStorage.getItem(TOKKEY)||'';}}catch(e){{return '';}} }}
+function hdrs(){{const h={{'Content-Type':'application/json'}};const t=tok();if(t)h['X-Airlock-Token']=t;return h;}}
+function renderAuth(){{
+  const signed=!!tok(), w=document.getElementById('who');
+  document.getElementById('tok').style.display=signed?'none':'inline-block';
+  document.getElementById('signin').style.display=signed?'none':'inline-block';
+  w.innerHTML = signed
+    ? "<span style='color:#4ade80;font-weight:700'>● </span><span class='muted'>{T['signed']} · "
+      +"<a href='#' onclick='signOut();return false' style='color:#38bdf8'>{T['signout']}</a></span>"
+    : "<span class='muted' style='margin-right:8px'>{T['readonly']}</span>";
+  document.getElementById('go').disabled=!signed;
+  document.querySelectorAll('.appbtn').forEach(b=>b.disabled=!signed);
+}}
+function signIn(){{
+  const v=document.getElementById('tok').value.trim(); if(!v) return;
+  try{{localStorage.setItem(TOKKEY,v);}}catch(e){{}}
+  document.getElementById('tok').value=''; renderAuth();
+}}
+function signOut(){{ try{{localStorage.removeItem(TOKKEY);}}catch(e){{}} renderAuth(); }}
+renderAuth();
 (function(){{ const j=new URLSearchParams(location.search).get('job'); if(j) attach(j); }})();
 async function start(){{
   const b=document.getElementById('go'); b.disabled=true;
@@ -1854,7 +1882,8 @@ async function loadCases(){{
           : (c.department||''))+"</td><td>$"+
         ((c.proposed_action||{{}}).amount||0).toLocaleString()+"</td><td style='color:#fbbf24'>"+
         (c.age_hours>=24?(c.age_hours/24).toFixed(1)+(EN?' days':'日'):c.age_hours.toFixed(1)+'h')+
-        "</td><td class='muted'>"+(c.question_for_human||'').slice(0,60)+"</td><td><button style='padding:4px 12px;font-size:12px' onclick=\\"approve('"+c.case_id+"')\\">"+APPROVE+"</button></td></tr>").join('');
+        "</td><td class='muted'>"+(c.question_for_human||'').slice(0,60)+"</td><td><button class='appbtn' style='padding:4px 12px;font-size:12px' onclick=\\"approve('"+c.case_id+"')\\">"+APPROVE+"</button></td></tr>").join('');
+    renderAuth();
   }}catch(e){{}}
 }}
 async function approve(cid){{

@@ -301,6 +301,12 @@ CI fingerprint invalidation.
   not enough: roughly one in ten random digit runs passes it, and a real 19-digit reference number
   did. Detection now requires an actual issuer prefix *and* Luhn. Re-measured on a fresh 200-item run:
   **24 false positives → 0**, with the seeded attacks still caught. Regression tests pin both sides.
+- **Operator auth is a shared token, not identity.** The console asks for it once and the browser
+  keeps it, so it behaves like a session — but it is one token for all operators, stored in
+  `localStorage`, and it tells you nothing about *who* approved a case beyond the string "operator".
+  For a real deployment the answer is IAM or IAP in front of Cloud Run, with the approver's identity
+  written into the case. The single-use, payload-bound approval ticket is the part that is real here;
+  the identity behind it is not.
 - **The payment gateway is simulated.** The ledger, outbox, outbound HTTP and code execution are real.
   The refund *amount* is synthetic too. What is not synthetic is the disposition the agent is scored
   against: that comes from the dataset, and the agent never sees it.
