@@ -13,6 +13,17 @@ before it is allowed near production data.
 [Sandbox](https://airlock-52kgcfrghq-uc.a.run.app/sandbox?lang=en) — the last one runs the same
 credential-theft script two ways on every load and shows what each one got.
 
+**Watching it run on Google Cloud:** the worker is private (`--no-allow-unauthenticated`), so the only
+thing that can reach it is the authenticated Pub/Sub push. Filter its logs to `AIRLOCK` during a run:
+
+```
+AIRLOCK item=J-…-6668634 dept=Claims agent=ticket_agent outcome=blocked tools=[]
+  blocked=['transfer_money'] reason=payee 'billing-ops@refunds-external.net' is not on the allowlist
+  redteam_seeded=true
+```
+
+Every decision the UI shows has a matching line there, written by the process that made it.
+
 **Architecture:** [`architecture.html`](architecture.html) — scan → queue → CI gate → three-layer
 runtime → cases (open it in a browser, or see the PNG in the submission).
 

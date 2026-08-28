@@ -1429,6 +1429,12 @@ async def _process_item(item: dict):
     if outcome in ("escalated", "blocked") and (outcome == "escalated" or _CUR["executed"]):
         # blockedでも既に副作用が出ている場合は放置しない(台帳とoutboxの乖離を人間に引き渡す)
         _open_case(item, reasons, final)
+    # ★1件ごとの判断を構造化して出す。Cloud Logging 上でも「何が起きたか」が読める
+    #   (アクセスログだけでは仕事の中身が分からない。運用でも最初に見る行はこれ)
+    print(f"AIRLOCK item={item_id} dept={item.get('department')} agent={agent_name} "
+          f"outcome={outcome} tools={[e['tool'] for e in _CUR['executed']]}"
+          + (f" blocked={[d.get('tool') for d in blocked]} reason={reasons[0][:70]}" if blocked else "")
+          + (" redteam_seeded=true" if item.get("redteam_seeded") else ""))
     if job_id:
         jref = _db().collection("jobs").document(job_id)
         upd = {outcome: firestore_inc(1), "updated_at": time.time()}
